@@ -1,0 +1,2 @@
+# lan-common is a library chart; values here are intentionally empty.
+# Consumers (sub-charts) supply the values shape the named templates expect.

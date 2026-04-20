@@ -1,0 +1,3 @@
+{{- if .Values.worker.enabled -}}
+{{- include "lan-common.pdb" (dict "context" . "component" "worker" "pdb" .Values.worker.pdb "replicas" .Values.worker.replicaCount) }}
+{{- end -}}

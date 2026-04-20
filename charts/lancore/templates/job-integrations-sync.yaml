@@ -1,0 +1,119 @@
+{{- /*
+  Pre-install/pre-upgrade Helm hook Job that runs
+  `php artisan integrations:sync` against a freshly-migrated LanCore DB.
+
+  Ordering: hook-weight -4 means this runs AFTER the migrate Job (weight -5)
+  but BEFORE any Deployment rolls. The reconciler upserts IntegrationApp
+  rows for every slug listed in config/integrations.php and seeds the
+  config-seeded tokens from the shared integrations-seed Secret.
+
+  @see docs/mil-std-498/SRS.md INT-F-011..014
+  @see docs/mil-std-498/SSDD.md §5.4.5
+  @see docs/adr/0008-declarative-integration-config.md
+*/}}
+{{- if .Values.web.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "lan-common.fullname" . }}-integrations-sync
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" . "component" "integrations-sync") | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-4"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 120
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        {{- include "lan-common.labels" (dict "context" . "component" "integrations-sync") | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "lan-common.serviceAccountName" . }}
+      {{- include "lan-common.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "lan-common.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: sync
+          image: {{ include "lan-common.image" (dict "context" . "image" .Values.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            {{- include "lan-common.containerSecurityContext" . | nindent 12 }}
+          command:
+            - php
+            - artisan
+            - integrations:sync
+          env:
+            - name: ROLE
+              value: "migrate"
+            - name: SKIP_MIGRATE
+              value: "1"
+            - name: SKIP_CACHE
+              value: "1"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existing.passwordSecret.name }}
+                  key: {{ .Values.database.existing.passwordSecret.key }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cache.existing.passwordSecret.name }}
+                  key: {{ .Values.cache.existing.passwordSecret.key }}
+          envFrom:
+            {{- if .Values.configMap.enabled }}
+            - configMapRef:
+                name: {{ include "lan-common.fullname" . }}
+            {{- end }}
+            {{- if .Values.appSecrets.enabled }}
+            - secretRef:
+                name: {{ include "lan-common.fullname" . }}-app
+            {{- end }}
+            - secretRef:
+                name: {{ include "lan-common.integrationsSeedSecretName" . }}
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { memory: 512Mi }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: supervisor-run
+              mountPath: /var/run/supervisor
+            - name: supervisor-log
+              mountPath: /var/log/supervisor
+            - name: caddy-data
+              mountPath: /data/caddy
+            - name: caddy-config
+              mountPath: /config/caddy
+            - name: storage-framework
+              mountPath: /var/www/html/storage/framework
+            - name: storage-logs
+              mountPath: /var/www/html/storage/logs
+            - name: storage-app
+              mountPath: /var/www/html/storage/app
+            - name: bootstrap-cache
+              mountPath: /var/www/html/bootstrap/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: supervisor-run
+          emptyDir: {}
+        - name: supervisor-log
+          emptyDir: {}
+        - name: caddy-data
+          emptyDir: {}
+        - name: caddy-config
+          emptyDir: {}
+        - name: storage-framework
+          emptyDir: {}
+        - name: storage-logs
+          emptyDir: {}
+        - name: storage-app
+          emptyDir: {}
+        - name: bootstrap-cache
+          emptyDir: {}
+{{- end }}

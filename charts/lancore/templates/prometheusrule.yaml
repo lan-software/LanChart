@@ -1,0 +1,91 @@
+{{- $monitoring := (.Values.global | default dict).monitoring | default dict -}}
+{{- if and .Values.prometheusRule.enabled $monitoring.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "lan-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+    {{- with $monitoring.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- if .Values.prometheusRule.overrideGroups }}
+    {{- toYaml .Values.prometheusRule.overrideGroups | nindent 4 }}
+    {{- else }}
+    - name: lancore.availability
+      rules:
+        - alert: LancoreHTTP5xxRateHigh
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*",status=~"5.."}[5m]))
+            /
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*"}[5m]))
+            > 0.02
+          for: 5m
+          labels:
+            severity: warning
+            app: lancore
+          annotations:
+            summary: "LanCore 5xx rate > 2% for 5m"
+            description: "HTTP 5xx responses exceed 2% of total requests sustained over 5 minutes."
+        - alert: LancorePodRestartStorm
+          expr: |
+            max by (pod) (
+              increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "lan-common.fullname" . }}.*"}[10m])
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            app: lancore
+          annotations:
+            summary: "LanCore pod restarting repeatedly"
+            description: "A pod has restarted more than 3 times in the last 10 minutes."
+    - name: lancore.migrations
+      rules:
+        - alert: LancoreMigrationJobFailed
+          expr: |
+            max by (job_name) (
+              kube_job_status_failed{namespace="{{ .Release.Namespace }}",job_name=~"{{ include "lan-common.fullname" . }}-migrate.*"}
+            ) > 0
+          for: 1m
+          labels:
+            severity: critical
+            app: lancore
+          annotations:
+            summary: "LanCore pre-upgrade migration Job failed"
+            description: "The pre-install/pre-upgrade migration Job has a non-zero failure count."
+    - name: lancore.horizon
+      rules:
+        - alert: LancoreHorizonQueueBacklog
+          expr: max(laravel_horizon_queue_waiting{namespace="{{ .Release.Namespace }}"}) > 1000
+          for: 5m
+          labels:
+            severity: warning
+            app: lancore
+          annotations:
+            summary: "Horizon queue backlog > 1000"
+            description: "Pending job count on a Horizon supervisor has exceeded 1000 for 5 minutes."
+        - alert: LancoreHorizonWaitTimeHigh
+          expr: max(laravel_horizon_queue_wait_seconds{namespace="{{ .Release.Namespace }}"}) > 60
+          for: 5m
+          labels:
+            severity: warning
+            app: lancore
+          annotations:
+            summary: "Horizon wait time > 60s"
+            description: "Jobs are waiting more than 60 seconds before being processed."
+    - name: lancore.pulse
+      rules:
+        - alert: LancorePulseExceptionSpike
+          expr: sum(rate(laravel_pulse_exceptions_total{namespace="{{ .Release.Namespace }}"}[5m])) > 0.16
+          for: 10m
+          labels:
+            severity: warning
+            app: lancore
+          annotations:
+            summary: "LanCore exceptions > 10/min"
+            description: "Pulse reports exception rate above 10 per minute sustained over 10 minutes."
+    {{- end }}
+{{- end -}}

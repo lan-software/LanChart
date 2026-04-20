@@ -1,0 +1,50 @@
+LanCore has been installed into namespace "{{ .Release.Namespace }}" as release "{{ .Release.Name }}".
+
+1. Web Deployment:          {{ include "lan-common.componentName" (dict "context" . "component" "web") }}
+2. Worker Deployment:       {{ include "lan-common.componentName" (dict "context" . "component" "worker") }}
+3. Migration Job (hook):    pre-install / pre-upgrade — ran {{ if .Values.migrations.enabled }}`php artisan migrate --force`{{ else }}DISABLED{{ end }}.
+
+Verify the install:
+
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} get ingress
+
+{{- if .Values.ingress.enabled }}
+
+External URL: https://{{ (.Values.ingress.hosts | first).host }}
+{{- end }}
+
+Next steps:
+
+  * Provision satellite integration apps + tokens (run from a web pod):
+
+      kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "lan-common.componentName" (dict "context" . "component" "web") }} -- \
+        php artisan integration:create "LanBrackets" --slug=lanbrackets \
+          --callback-url=https://lanbrackets.{{ .Values.global.domain | default "example.com" }}/auth/lancore/callback \
+          --scopes=user:read --scopes=user:email --scopes=user:roles
+
+      kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "lan-common.componentName" (dict "context" . "component" "web") }} -- \
+        php artisan integration:token lanbrackets "production"
+
+    (When installing the umbrella chart, the post-install bootstrap Job does
+     this automatically for every satellite — see the umbrella's NOTES.txt.)
+
+  * Rotate the Ed25519 ticket-signing keyring:
+
+      kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "lan-common.componentName" (dict "context" . "component" "web") }} -- \
+        php artisan tickets:keys:rotate
+
+    In Kubernetes this is executed as a separate Job that patches the
+    signing-keys Secret and triggers a rolling restart. A CronJob template
+    will ship in Phase 2 (see SSDD §5.6).
+
+{{- if .Values.horizon.enabled }}
+
+Horizon dashboard:  https://{{ (.Values.ingress.hosts | first).host }}/horizon
+{{- end }}
+{{- if .Values.pulse.enabled }}
+Pulse dashboard:    https://{{ (.Values.ingress.hosts | first).host }}/pulse
+{{- end }}
+
+Both are guarded by an admin-only authorization gate; ingress-level basic-auth
+is the Phase 1 default, migrating to LanCore SSO in Phase 2.

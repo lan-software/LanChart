@@ -1,0 +1,30 @@
+{{- if .Values.database.createCluster -}}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.database.cluster.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+spec:
+  instances: {{ .Values.database.cluster.instances }}
+  storage:
+    size: {{ .Values.database.cluster.storage.size }}
+    {{- if .Values.database.cluster.storage.storageClass }}
+    storageClass: {{ .Values.database.cluster.storage.storageClass | quote }}
+    {{- end }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.database.existing.database | default "lancore" }}
+      owner: {{ .Values.database.existing.username | default "lancore" }}
+      secret:
+        name: {{ .Values.database.existing.passwordSecret.name }}
+  {{- if .Values.database.cluster.backup.enabled }}
+  backup:
+    retentionPolicy: {{ .Values.database.cluster.backup.retentionPolicy | quote }}
+    {{- with .Values.database.cluster.backup.barmanObjectStore }}
+    barmanObjectStore:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+{{- end -}}

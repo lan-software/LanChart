@@ -1,0 +1,3 @@
+{{- if .Values.worker.enabled -}}
+{{- include "lan-common.networkPolicy" (dict "context" . "component" "worker" "ports" (list)) }}
+{{- end -}}

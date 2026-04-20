@@ -1,0 +1,72 @@
+============================================================================
+lan-software has been installed into namespace "{{ .Release.Namespace }}".
+============================================================================
+
+Installed apps:
+{{- if .Values.lancore.enabled }}
+  ✓ LanCore      — SSO issuer, ticketing, Stripe, Horizon, Pulse
+{{- end }}
+{{- if .Values.lanbrackets.enabled }}
+  ✓ LanBrackets  — tournament bracket management
+{{- end }}
+{{- if .Values.lanentrance.enabled }}
+  ✓ LanEntrance  — check-in / door control
+{{- end }}
+{{- if .Values.lanshout.enabled }}
+  ✓ LanShout     — announcements / chat
+{{- end }}
+{{- if .Values.lanhelp.enabled }}
+  ✓ LanHelp      — staff helpdesk
+{{- end }}
+
+Cluster-scoped prerequisites (not installed by this chart):
+  - ingress-nginx (or another Ingress controller)
+  - cert-manager + a {{ .Values.global.tls.issuer.kind }} named "{{ .Values.global.tls.issuer.name }}"
+  - CloudNativePG operator (if any sub-chart has database.createCluster=true)
+  - Dragonfly Operator       (if any sub-chart has cache.createInstance=true)
+  - MinIO Operator           (if global.s3.mode == minio-tenant)
+  - prometheus-operator CRDs (if global.monitoring.enabled)
+
+See LanCore SIP §3.5 for the full prereq matrix.
+
+Hostnames (derived from global.domain):
+{{- if .Values.lancore.enabled }}
+  LanCore:       {{ include "lan-common.scheme" . }}://{{ include "lan-common.lancoreHost" . }}
+{{- end }}
+{{- if .Values.lanbrackets.enabled }}
+  LanBrackets:   {{ include "lan-common.scheme" . }}://{{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanbrackets") }}
+{{- end }}
+{{- if .Values.lanentrance.enabled }}
+  LanEntrance:   {{ include "lan-common.scheme" . }}://{{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanentrance") }}
+{{- end }}
+{{- if .Values.lanshout.enabled }}
+  LanShout:      {{ include "lan-common.scheme" . }}://{{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanshout") }}
+{{- end }}
+{{- if .Values.lanhelp.enabled }}
+  LanHelp:       {{ include "lan-common.scheme" . }}://{{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanhelp") }}
+{{- end }}
+
+Next steps:
+
+  1. Verify pod rollout:
+       kubectl -n {{ .Release.Namespace }} get pods
+
+  2. The pre-install/pre-upgrade hooks that just ran:
+       kubectl -n {{ .Release.Namespace }} logs -l lan-software.mawiguko.dev/component=migrate
+       kubectl -n {{ .Release.Namespace }} logs -l lan-software.mawiguko.dev/component=integrations-sync
+
+  3. Integration provisioning is already done. LanCore's `integrations:sync`
+     hook Job reconciled `config/integrations.php` into the database using
+     the shared `{{ include "lan-common.integrationsSeedSecretName" . }}`
+     Secret. Every satellite pod mounted its slice of that Secret at boot
+     as `LANCORE_TOKEN` + `LANCORE_WEBHOOK_SECRET` — no post-install Job,
+     no rolling restart needed.
+
+  4. Preview the reconciliation plan before the next upgrade:
+       kubectl -n {{ .Release.Namespace }} exec deploy/lancore-web -- \
+         php artisan integrations:sync --dry-run
+
+Manual provisioning (only if you disabled the shared-seed pattern):
+See docs/adr/0008-declarative-integration-config.md for the declarative
+model and docs/adr/0006-satellite-token-bootstrap-job.md (superseded) for
+the historical imperative bootstrap-Job path.

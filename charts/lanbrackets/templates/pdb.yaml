@@ -1,0 +1,3 @@
+{{- if .Values.web.enabled -}}
+{{- include "lan-common.pdb" (dict "context" . "component" "web" "pdb" .Values.web.pdb "replicas" .Values.web.replicaCount) }}
+{{- end -}}

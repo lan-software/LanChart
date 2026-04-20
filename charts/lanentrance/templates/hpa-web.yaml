@@ -1,0 +1,3 @@
+{{- if .Values.web.enabled -}}
+{{- include "lan-common.hpa" (dict "context" . "component" "web" "hpa" .Values.web.hpa) }}
+{{- end -}}

@@ -1,0 +1,30 @@
+{{- $monitoring := (.Values.global | default dict).monitoring | default dict -}}
+{{- if and .Values.prometheusRule.enabled $monitoring.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "lan-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+    {{- with $monitoring.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- if .Values.prometheusRule.overrideGroups }}
+    {{- toYaml .Values.prometheusRule.overrideGroups | nindent 4 }}
+    {{- else }}
+    - name: lanhelp.availability
+      rules:
+        - alert: LanhelpHTTP5xxRateHigh
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*",status=~"5.."}[5m]))
+            /
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*"}[5m]))
+            > 0.02
+          for: 5m
+          labels: { severity: warning, app: lanhelp }
+          annotations: { summary: "LanHelp 5xx rate > 2% for 5m" }
+    {{- end }}
+{{- end -}}

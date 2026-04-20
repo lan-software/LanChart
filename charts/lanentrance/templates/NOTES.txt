@@ -1,0 +1,14 @@
+LanEntrance has been installed into namespace "{{ .Release.Namespace }}" as release "{{ .Release.Name }}".
+
+Web (server) Deployment: {{ include "lan-common.componentName" (dict "context" . "component" "web") }}
+
+{{- if .Values.ingress.enabled }}
+External URL: https://{{ (.Values.ingress.hosts | first).host }}
+{{- end }}
+
+LanEntrance validates LanCore-issued tickets via the JWKS endpoint at
+{{ .Values.jwks.endpoint | default "$LANCORE_INTERNAL_URL/api/entrance/signing-keys" }}.
+
+The LANCORE_TOKEN for LanEntrance is provisioned by the umbrella's bootstrap
+Job and stored in Secret
+`{{ .Values.lancore.satellite.tokenSecret.name | default (printf "%s-lancore" (include "lan-common.name" .)) }}`.

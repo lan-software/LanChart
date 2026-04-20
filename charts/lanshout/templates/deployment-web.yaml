@@ -1,0 +1,24 @@
+{{- if .Values.web.enabled -}}
+{{- $extraEnv := list
+  (dict "name" "FLAVOR" "value" "server")
+  (dict "name" "DB_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.database.existing.passwordSecret.name
+    "key"  .Values.database.existing.passwordSecret.key
+  )))
+  (dict "name" "REDIS_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.cache.existing.passwordSecret.name
+    "key"  .Values.cache.existing.passwordSecret.key
+  )))
+-}}
+{{- $envFromExtras := list -}}
+{{- if .Values.mail.credentialsSecret.name -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.mail.credentialsSecret.name "optional" true)) -}}
+{{- end -}}
+{{- include "lan-common.deployment" (dict
+    "context" .
+    "component" "web"
+    "values" .Values.web
+    "extraEnv" $extraEnv
+    "envFromExtras" $envFromExtras
+) }}
+{{- end -}}

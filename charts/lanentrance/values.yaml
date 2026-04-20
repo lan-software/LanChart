@@ -1,0 +1,123 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/lan-software/lanentrance
+  tag: ""
+  pullPolicy: IfNotPresent
+  port: 80
+
+imagePullSecrets: []
+
+# Server flavor (non-Octane). Single Deployment name "server".
+web:
+  enabled: true
+  replicaCount: 2
+  roleEnv: all              # server + queue:work + scheduler in one pod
+  skipMigrate: "1"
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { memory: 512Mi }
+  hpa:
+    enabled: false          # LanEntrance typically runs at door-scale, not bursty
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+worker:
+  enabled: false
+
+migrations:
+  enabled: true
+
+service:    { type: ClusterIP, annotations: {}, metricsPort: 9090 }
+
+ingress:
+  enabled: true
+  className: nginx
+  # Hosts computed via lan-common.satelliteHost from global.domain + style.
+  hosts: []
+  tls:
+    enabled: true
+    secretName: ""
+    issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer }
+  annotations: {}
+
+lancore:
+  appSlug: lanentrance
+  satellite:
+    enabled: true
+    baseUrl: ""
+    internalUrl: ""
+    callbackUrl: ""
+    tokenSecret:   { name: "", key: token }
+    webhookSecret: { name: "", key: webhook_secret }
+
+# LanEntrance-specific: JWKS verifier for signed ticket tokens.
+jwks:
+  endpoint: ""                  # falls back to {{ internalUrl }}/api/entrance/signing-keys
+  cacheTtlSeconds: 300
+  bootstrapSecret: { name: "", key: "jwks.json" }   # optional offline bootstrap
+
+database:
+  driver: pgsql
+  createCluster: false
+  cluster:
+    name: lanentrance-pg
+    instances: 1
+    storage: { size: 5Gi, storageClass: "" }
+  existing:
+    host: ""
+    port: 5432
+    database: lanentrance
+    username: lanentrance
+    passwordSecret: { name: lanentrance-db, key: password }
+
+cache:
+  driver: dragonfly
+  createInstance: false
+  instance:
+    name: lanentrance-dragonfly
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits:   { memory: 256Mi }
+    persistence: { enabled: false, storageClass: "", size: 1Gi }
+  existing:
+    host: ""
+    port: 6379
+    passwordSecret: { name: lanentrance-cache, key: password }
+  databases: { cache: 1, sessions: 2 }
+
+mail:
+  driver: log
+  host: ""
+  port: 587
+  encryption: tls
+  credentialsSecret: { name: lanentrance-smtp }
+  from: { address: noreply@example.com, name: LanEntrance }
+
+configMap:  { enabled: true }
+appSecrets: { enabled: true, provider: chart }
+
+serviceAccount: { create: true, name: "", annotations: {}, automountToken: false }
+
+podSecurityContext: {}
+containerSecurityContext: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  allowFrom: [ingress-nginx, prometheus, otel-collector]
+  allowToEgress: [dns, postgres, cache, lancore-internal]
+  ingress: []
+  egress: []
+
+serviceMonitor: { enabled: false, interval: 30s, scrapeTimeout: 10s, path: /metrics }
+prometheusRule: { enabled: false }
+
+global: {}

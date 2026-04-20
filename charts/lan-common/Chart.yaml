@@ -1,0 +1,18 @@
+apiVersion: v2
+name: lan-common
+description: Shared library chart for the lan-software umbrella — labels, deployment, probes, NetworkPolicy, migration Job, and other reusable templates for LanCore and its satellite apps.
+type: library
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/lan-software/LanChart
+sources:
+  - https://github.com/lan-software/LanChart
+maintainers:
+  - name: Markus Kohn
+    email: post@markus-kohn.com
+keywords:
+  - lan-software
+  - library
+  - laravel
+  - octane

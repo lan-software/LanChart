@@ -1,0 +1,147 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/lan-software/lanbrackets
+  tag: ""
+  pullPolicy: IfNotPresent
+  port: 80
+
+imagePullSecrets: []
+
+# LanBrackets runs Octane with a DB queue (no Horizon). Single Deployment named
+# "web" for consistency with lancore's component conventions.
+web:
+  enabled: true
+  replicaCount: 2
+  roleEnv: all              # octane web + queue:work + scheduler in one pod
+  skipMigrate: "1"
+  octaneWorkers: "auto"
+  octaneMaxRequests: "500"
+  terminationGracePeriodSeconds: 60
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { memory: 1Gi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+worker:
+  enabled: false            # Phase 1: co-located with ROLE=all; set enabled:true to split
+
+migrations:
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+
+service:
+  type: ClusterIP
+  annotations: {}
+  metricsPort: 9090
+
+ingress:
+  enabled: true
+  className: nginx
+  # Hosts are computed from global.domain + global.satelliteHostStyle; set
+  # hosts[].host explicitly (with paths[]) to override. See the
+  # lan-common.satelliteHost helper.
+  hosts: []
+  tls:
+    enabled: true
+    secretName: ""
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  annotations: {}
+
+lancore:
+  appSlug: lanbrackets
+  satellite:
+    enabled: true
+    baseUrl: ""               # falls back to global.lancore.baseUrl
+    internalUrl: ""           # falls back to global.lancore.internalUrl
+    callbackUrl: ""           # falls back to https://<first ingress host>/auth/lancore/callback
+    tokenSecret:      { name: "", key: token }
+    webhookSecret:    { name: "", key: webhook_secret }
+
+database:
+  driver: pgsql
+  createCluster: false
+  cluster:
+    name: lanbrackets-pg
+    instances: 1
+    storage: { size: 10Gi, storageClass: "" }
+  existing:
+    host: ""                  # defaults to {{ .cluster.name }}-rw
+    port: 5432
+    database: lanbrackets
+    username: lanbrackets
+    passwordSecret: { name: lanbrackets-db, key: password }
+
+cache:
+  driver: dragonfly
+  createInstance: false
+  instance:
+    name: lanbrackets-dragonfly
+    replicas: 1
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { memory: 512Mi }
+    persistence: { enabled: false, storageClass: "", size: 5Gi }
+  existing:
+    host: ""
+    port: 6379
+    passwordSecret: { name: lanbrackets-cache, key: password }
+  databases: { cache: 1, sessions: 2 }
+
+# LanBrackets writes bracket-cache artifacts into public/. Phase 1 backs this
+# with an emptyDir per pod + a warmup step on Octane boot. RWX PVC toggle is
+# a Phase 2 option for clusters with shared storage (CephFS/NFS/Longhorn).
+writablePublic:
+  mode: emptyDir              # emptyDir | rwx-pvc
+  size: 1Gi
+
+mail:
+  driver: log
+  host: ""
+  port: 587
+  encryption: tls
+  credentialsSecret: { name: lanbrackets-smtp }
+  from: { address: noreply@example.com, name: LanBrackets }
+
+configMap:
+  enabled: true
+
+appSecrets:
+  enabled: true
+  provider: chart
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountToken: false
+
+podSecurityContext: {}
+containerSecurityContext: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  allowFrom: [ingress-nginx, prometheus, otel-collector]
+  allowToEgress: [dns, postgres, cache, lancore-internal, smtp]
+  ingress: []
+  egress: []
+
+serviceMonitor: { enabled: false, interval: 30s, scrapeTimeout: 10s, path: /metrics }
+prometheusRule: { enabled: false }
+
+global: {}

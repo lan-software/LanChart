@@ -1,0 +1,15 @@
+{{- if .Values.cache.createInstance -}}
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: {{ .Values.cache.instance.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.cache.instance.replicas }}
+  {{- with .Values.cache.instance.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end -}}

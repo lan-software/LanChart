@@ -1,0 +1,59 @@
+{{- if .Values.web.enabled -}}
+{{- $extraEnv := list
+  (dict "name" "FLAVOR" "value" "octane")
+-}}
+{{- if .Values.horizon.enabled -}}
+{{- /* no-op placeholder — Horizon runs in the worker pod per LanBase supervisord-octane-worker.conf */ -}}
+{{- end -}}
+{{- $extraEnvWithSigning := concat $extraEnv (list
+  (dict "name" "TICKET_SIGNING_KEY_DIR" "value" .Values.ticketing.signingKeys.mountPath)
+  (dict "name" "TICKET_TOKEN_PEPPER" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.ticketing.tokenPepperSecret.name
+    "key"  .Values.ticketing.tokenPepperSecret.key
+  )))
+  (dict "name" "DB_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.database.existing.passwordSecret.name
+    "key"  .Values.database.existing.passwordSecret.key
+  )))
+  (dict "name" "REDIS_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.cache.existing.passwordSecret.name
+    "key"  .Values.cache.existing.passwordSecret.key
+  )))
+) -}}
+{{- $envFromExtras := list -}}
+{{- if .Values.stripe.enabled -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.stripe.credentialsSecret.name)) -}}
+{{- end -}}
+{{- if .Values.webpush.enabled -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.webpush.credentialsSecret.name)) -}}
+{{- end -}}
+{{- if .Values.mail.credentialsSecret.name -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.mail.credentialsSecret.name "optional" true)) -}}
+{{- end -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.storage.public.credentialsSecret.name)) -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" .Values.storage.private.credentialsSecret.name)) -}}
+{{- /* Integrations seed — exposes <SLUG>_LANCORE_TOKEN / _ANNOUNCEMENT_WEBHOOK_SECRET / _ROLES_WEBHOOK_SECRET per satellite. Consumed by config/integrations.php via env(). */ -}}
+{{- $envFromExtras = append $envFromExtras (dict "secretRef" (dict "name" (include "lan-common.integrationsSeedSecretName" .))) -}}
+{{- $extraVolumes := list
+  (dict "name" "ticket-signing-keys"
+        "secret" (dict
+          "secretName" (include "lancore.signingKeysSecretName" .)
+          "defaultMode" (int .Values.ticketing.signingKeys.defaultMode)
+          "optional" false
+        ))
+-}}
+{{- $extraVolumeMounts := list
+  (dict "name" "ticket-signing-keys"
+        "mountPath" .Values.ticketing.signingKeys.mountPath
+        "readOnly" true)
+-}}
+{{- include "lan-common.deployment" (dict
+    "context" .
+    "component" "web"
+    "values" .Values.web
+    "extraEnv" $extraEnvWithSigning
+    "envFromExtras" $envFromExtras
+    "extraVolumes" $extraVolumes
+    "extraVolumeMounts" $extraVolumeMounts
+) }}
+{{- end -}}

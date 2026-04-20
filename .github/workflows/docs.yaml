@@ -1,0 +1,47 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**/values.yaml"
+      - "charts/**/Chart.yaml"
+      - "charts/**/README.md.gotmpl"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  HELM_DOCS_VERSION: v1.14.2
+
+jobs:
+  helm-docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install helm-docs
+        run: |
+          curl -L -o /tmp/helm-docs.tgz "https://github.com/norwoodj/helm-docs/releases/download/${{ env.HELM_DOCS_VERSION }}/helm-docs_${HELM_DOCS_VERSION#v}_Linux_x86_64.tar.gz"
+          mkdir -p /tmp/helm-docs && tar -xzf /tmp/helm-docs.tgz -C /tmp/helm-docs
+          sudo mv /tmp/helm-docs/helm-docs /usr/local/bin/
+
+      - name: Regenerate chart README.md files
+        run: helm-docs --chart-search-root charts
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No doc changes."
+            exit 0
+          fi
+          git add charts/**/README.md
+          git commit -m "docs(helm): regenerate chart README.md files [skip ci]"
+          git push

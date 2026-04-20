@@ -1,0 +1,297 @@
+# LanCore sub-chart — see SIP §3.5 (LanCore/docs/mil-std-498/SIP.md) for the
+# canonical install procedure. Values below follow the umbrella `global:`
+# block first, then chart-local overrides.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Image: digest-pinned tag is recommended for production (see SSS ENV-DEP-010).
+image:
+  repository: ghcr.io/lan-software/lancore
+  tag: ""           # defaults to Chart.AppVersion when unset
+  pullPolicy: IfNotPresent
+  port: 80          # FrankenPHP listens on :80 per LanBase Caddyfile
+
+imagePullSecrets: []
+
+# Web tier — Octane + FrankenPHP + Horizon + scheduler (ROLE=all in single-pod
+# mode) OR split web/worker (ROLE=web + ROLE=worker, SKIP_MIGRATE=1 on both;
+# the migrate Job owns migrations). Phase 1 defaults to the split mode.
+web:
+  enabled: true
+  replicaCount: 2
+  roleEnv: web
+  skipMigrate: "1"
+  octaneWorkers: "auto"
+  octaneMaxRequests: "500"
+  terminationGracePeriodSeconds: 60
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { memory: 1Gi }
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# Worker tier — Horizon + scheduler. No HPA (Horizon manages concurrency).
+worker:
+  enabled: true
+  replicaCount: 2
+  roleEnv: worker
+  skipMigrate: "1"
+  terminationGracePeriodSeconds: 120
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { memory: 1Gi }
+  hpa:
+    enabled: false
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# Pre-upgrade/pre-install Helm hook that runs `php artisan migrate --force`.
+# Must complete before web/worker ReplicaSets roll (enforced via hook ordering).
+migrations:
+  enabled: true
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { memory: 512Mi }
+  # command: [php, artisan, migrate, --force]   # default
+
+service:
+  type: ClusterIP
+  annotations: {}
+  metricsPort: 9090
+
+ingress:
+  enabled: true
+  className: nginx
+  # Hosts default to global.lancoreHost (or "lancore.<global.domain>"); set
+  # hosts[].host explicitly to override. See lan-common.lancoreHost helper.
+  hosts: []
+  tls:
+    enabled: true
+    secretName: ""
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  # /horizon, /pulse — admin paths. A separate "-admin" Ingress is emitted
+  # with auth annotations when adminAuth.mode != "none".
+  adminPaths:
+    - /horizon
+    - /pulse
+  adminAuth:
+    mode: none                # none | basic | oauth2proxy
+    basic:
+      # Operator provisions an htpasswd Secret out of band:
+      #   htpasswd -bc auth admin 'superhorse'
+      #   kubectl -n lan-software create secret generic lancore-admin-basic-auth --from-file=auth
+      secretName: ""          # defaults to {{ fullname }}-admin-basic-auth
+    oauth2proxy:
+      # Requires a cluster-operator-provided oauth2-proxy Service. The
+      # oauth2-proxy Deployment is NOT installed by this chart.
+      upstream: ""            # e.g. http://oauth2-proxy.auth.svc.cluster.local:4180
+      signinBase: ""          # e.g. https://auth.example.com  (defaults to the same host)
+    extraAnnotations: {}
+  annotations: {}
+
+# Database — CloudNativePG. createCluster=true emits a Cluster CR; otherwise
+# the chart connects to an existing cluster whose Services it discovers via
+# .existing below.
+database:
+  driver: pgsql
+  createCluster: false
+  cluster:
+    name: lancore-pg
+    instances: 3
+    storage:
+      size: 20Gi
+      storageClass: ""
+    backup:
+      enabled: true
+      retentionPolicy: 30d
+      barmanObjectStore: {}   # fill in for S3 barman backups
+  existing:
+    host: ""                  # defaults to {{ .cluster.name }}-rw
+    port: 5432
+    database: lancore
+    username: lancore
+    passwordSecret:
+      name: lancore-db
+      key: password
+
+# Cache — Dragonfly Operator. createInstance=true emits a Dragonfly CR.
+cache:
+  driver: dragonfly
+  createInstance: false
+  instance:
+    name: lancore-dragonfly
+    replicas: 1
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { memory: 1Gi }
+    persistence:
+      enabled: true
+      storageClass: ""
+      size: 10Gi
+  existing:
+    host: ""                  # defaults to {{ .instance.name }}
+    port: 6379
+    passwordSecret:
+      name: lancore-cache
+      key: password
+  databases:
+    cache: 1
+    sessions: 2
+    queue: 3
+    horizon: 4
+
+# Object storage — split bucket (public + private). mode: external requires
+# operator-provisioned buckets + credentials Secrets. mode: minio-tenant
+# emits a MinIO Tenant CR (requires the MinIO operator; Phase 2 template).
+storage:
+  mode: external
+  tenant:
+    name: lancore-minio
+    servers: 1
+    volumesPerServer: 2
+    size: 50Gi
+  public:
+    bucket: lancore-public
+    endpoint: ""
+    region: us-east-1
+    pathStyle: true
+    credentialsSecret:
+      name: lancore-s3-public
+  private:
+    bucket: lancore-private
+    endpoint: ""
+    region: us-east-1
+    pathStyle: true
+    credentialsSecret:
+      name: lancore-s3-private
+
+mail:
+  driver: smtp
+  host: ""
+  port: 587
+  encryption: tls
+  credentialsSecret:
+    name: lancore-smtp
+  from:
+    address: noreply@example.com
+    name: LanCore
+
+stripe:
+  enabled: false
+  credentialsSecret:
+    name: lancore-stripe
+
+webpush:
+  enabled: false
+  credentialsSecret:
+    name: lancore-webpush
+
+tmt2:
+  enabled: false
+  baseUrl: ""
+  tokenSecret:
+    name: lancore-tmt2
+    key: token
+
+ticketing:
+  tokenPepperSecret:
+    name: lancore-ticketing
+    key: pepper
+  signingKeys:
+    secretName: lancore-ticket-signing-keys
+    mountPath: /var/www/html/storage/keys/ticket_signing
+    defaultMode: 256    # 0400 in decimal
+    activeKid: ""
+    # inlineKeys: {kid: base64}  — dev-only, chart emits the Secret when set
+    inlineKeys: {}
+    # Monthly key rotation. Requires a LanCore patch adding
+    # `--emit-secret-patch=<path>` to `php artisan tickets:keys:rotate`.
+    # Disabled by default until that patch is in production.
+    rotation:
+      enabled: false
+      schedule: "0 3 1 * *"          # monthly at 03:00 UTC on the 1st
+      historyLimit: 3
+      activeDeadlineSeconds: 300
+
+pulse:
+  enabled: true
+  authorize: admin-only
+
+horizon:
+  enabled: true
+  authorize: admin-only
+
+demo:
+  enabled: false          # APP_DEMO toggle
+
+configMap:
+  enabled: true
+  # extra: {}             # user-supplied non-secret env, merged into configmap
+
+appSecrets:
+  enabled: true
+  # The chart synthesises {{ fullname }}-app Secret from the blocks above.
+  # Alternative: provide provider: external to opt in to ExternalSecret.
+  provider: chart
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountToken: false
+
+podSecurityContext: {}
+containerSecurityContext: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: true
+  allowFrom:
+    - ingress-nginx
+    - prometheus
+    - otel-collector
+    - lanbrackets
+    - lanentrance
+    - lanshout
+    - lanhelp
+  allowToEgress:
+    - dns
+    - postgres
+    - cache
+    - s3
+    - smtp
+    - stripe
+    - webpush
+    - tmt2
+  # Advanced override: supply raw ingress/egress rule lists.
+  ingress: []
+  egress: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+
+prometheusRule:
+  enabled: false
+
+# Shared with umbrella global; duplicated here so the sub-chart can be
+# helm-installed directly (outside the umbrella) for development.
+global: {}

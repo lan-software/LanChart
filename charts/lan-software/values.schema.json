@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lan-software umbrella chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "global": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "object",
+          "properties": {
+            "registry":     { "type": "string" },
+            "pullSecrets":  { "type": "array" }
+          }
+        },
+        "domain":             { "type": "string" },
+        "scheme":             { "type": "string", "enum": ["http", "https"] },
+        "lancoreHost":        { "type": "string" },
+        "satelliteHostStyle": { "type": "string", "enum": ["flat", "prefixed", "custom"] },
+        "integrations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "lanbrackets": { "$ref": "#/$defs/integrationOverride" },
+            "lanentrance": { "$ref": "#/$defs/integrationOverride" },
+            "lanshout":    { "$ref": "#/$defs/integrationOverride" },
+            "lanhelp":     { "$ref": "#/$defs/integrationOverride" }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "properties": {
+            "issuer": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "kind": { "type": "string", "enum": ["ClusterIssuer", "Issuer"] }
+              }
+            }
+          }
+        },
+        "lancore": {
+          "type": "object",
+          "properties": {
+            "baseUrl":     { "type": "string" },
+            "internalUrl": { "type": "string" }
+          }
+        },
+        "postgres": {
+          "type": "object",
+          "properties": { "operator": { "type": "string", "enum": ["cnpg"] } }
+        },
+        "cache": {
+          "type": "object",
+          "properties": { "operator": { "type": "string", "enum": ["dragonfly"] } }
+        },
+        "s3": {
+          "type": "object",
+          "properties": { "mode": { "type": "string", "enum": ["external", "minio-tenant"] } }
+        },
+        "podSecurity": {
+          "type": "object",
+          "properties": { "profile": { "type": "string", "enum": ["privileged", "baseline", "restricted"] } }
+        },
+        "monitoring": {
+          "type": "object",
+          "properties": {
+            "enabled":      { "type": "boolean" },
+            "namespace":    { "type": "string" },
+            "ruleLabels":   { "type": "object" }
+          }
+        },
+        "otel": {
+          "type": "object",
+          "properties": {
+            "enabled":  { "type": "boolean" },
+            "endpoint": { "type": "string" }
+          }
+        }
+      }
+    },
+    "lancore":     { "type": "object" },
+    "lanbrackets": { "type": "object" },
+    "lanentrance": { "type": "object" },
+    "lanshout":    { "type": "object" },
+    "lanhelp":     { "type": "object" }
+  },
+  "$defs": {
+    "integrationOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host":                      { "type": "string" },
+        "token":                     { "type": "string" },
+        "announcementWebhookSecret": { "type": "string" },
+        "rolesWebhookSecret":        { "type": "string" }
+      }
+    }
+  }
+}

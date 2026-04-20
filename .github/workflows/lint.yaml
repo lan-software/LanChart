@@ -1,0 +1,110 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v3.16.3
+  KUBECONFORM_VERSION: v0.6.7
+  HELM_UNITTEST_VERSION: 0.7.2
+  K8S_VERSION: "1.31.0"
+
+jobs:
+  helm-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version ${{ env.HELM_UNITTEST_VERSION }}
+
+      - name: Resolve chart dependencies
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            helm dependency update charts/$chart
+          done
+
+      - name: helm lint
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            echo "== helm lint charts/$chart =="
+            helm lint charts/$chart
+          done
+
+      - name: helm template (dev values)
+        run: helm template lan-software charts/lan-software -f examples/values-dev-kind.yaml --namespace lan-software > /tmp/rendered-dev.yaml
+
+      - name: helm template (prod values)
+        run: helm template lan-software charts/lan-software -f examples/values-prod.yaml --namespace lan-software > /tmp/rendered-prod.yaml
+
+      - name: verify-hostnames (no example.com leaks)
+        run: make verify-hostnames
+
+      - name: Install kubeconform
+        run: |
+          curl -L -o /tmp/kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/${{ env.KUBECONFORM_VERSION }}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tgz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: kubeconform (dev)
+        run: |
+          kubeconform -strict -summary -ignore-missing-schemas \
+            -kubernetes-version ${{ env.K8S_VERSION }} \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/rendered-dev.yaml
+
+      - name: kubeconform (prod)
+        run: |
+          kubeconform -strict -summary -ignore-missing-schemas \
+            -kubernetes-version ${{ env.K8S_VERSION }} \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/rendered-prod.yaml
+
+      - name: helm-unittest
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            if [ -d "charts/$chart/tests" ]; then
+              echo "== helm unittest charts/$chart =="
+              helm unittest charts/$chart
+            fi
+          done
+
+  conftest:
+    runs-on: ubuntu-24.04
+    needs: helm-lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install conftest
+        run: |
+          curl -L -o /tmp/conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz"
+          tar -xzf /tmp/conftest.tgz -C /tmp
+          sudo mv /tmp/conftest /usr/local/bin/
+
+      - name: Resolve dependencies
+        run: helm dependency update charts/lan-software
+
+      - name: Render prod manifests
+        run: helm template lan-software charts/lan-software -f examples/values-prod.yaml --namespace lan-software > /tmp/rendered-prod.yaml
+
+      - name: conftest test
+        run: conftest test --policy policies/ /tmp/rendered-prod.yaml

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LanCore chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "nameOverride":     { "type": "string" },
+    "fullnameOverride": { "type": "string" },
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string" },
+        "tag":        { "type": "string" },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
+        "port":       { "type": "integer" }
+      }
+    },
+    "imagePullSecrets": { "type": "array", "items": { "type": "object" } },
+    "web": {
+      "type": "object",
+      "properties": {
+        "enabled":      { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "roleEnv":      { "type": "string", "enum": ["web", "all"] },
+        "skipMigrate":  { "type": "string", "enum": ["0", "1"] },
+        "resources":    { "type": "object" },
+        "hpa":          { "type": "object" },
+        "pdb":          { "type": "object" }
+      }
+    },
+    "worker": {
+      "type": "object",
+      "properties": {
+        "enabled":      { "type": "boolean" },
+        "replicaCount": { "type": "integer", "minimum": 0 },
+        "roleEnv":      { "type": "string", "enum": ["worker", "all"] },
+        "skipMigrate":  { "type": "string", "enum": ["0", "1"] }
+      }
+    },
+    "migrations": { "type": "object" },
+    "service":    { "type": "object" },
+    "ingress":    { "type": "object" },
+    "database": {
+      "type": "object",
+      "properties": {
+        "driver":        { "type": "string", "enum": ["pgsql"] },
+        "createCluster": { "type": "boolean" }
+      }
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "driver":         { "type": "string", "enum": ["dragonfly", "redis"] },
+        "createInstance": { "type": "boolean" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["external", "minio-tenant"] }
+      }
+    },
+    "mail":       { "type": "object" },
+    "stripe":     { "type": "object" },
+    "webpush":    { "type": "object" },
+    "tmt2":       { "type": "object" },
+    "ticketing":  { "type": "object" },
+    "pulse":      { "type": "object" },
+    "horizon":    { "type": "object" },
+    "demo":       { "type": "object" },
+    "configMap":  { "type": "object" },
+    "appSecrets": {
+      "type": "object",
+      "properties": {
+        "enabled":  { "type": "boolean" },
+        "provider": { "type": "string", "enum": ["chart", "external"] }
+      }
+    },
+    "serviceAccount":          { "type": "object" },
+    "podSecurityContext":       { "type": "object" },
+    "containerSecurityContext": { "type": "object" },
+    "podAnnotations":           { "type": "object" },
+    "nodeSelector":             { "type": "object" },
+    "tolerations":              { "type": "array" },
+    "affinity":                 { "type": "object" },
+    "networkPolicy":            { "type": "object" },
+    "serviceMonitor":           { "type": "object" },
+    "prometheusRule":           { "type": "object" },
+    "global":                   { "type": "object" }
+  }
+}

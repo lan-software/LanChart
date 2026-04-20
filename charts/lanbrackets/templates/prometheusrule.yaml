@@ -1,0 +1,54 @@
+{{- $monitoring := (.Values.global | default dict).monitoring | default dict -}}
+{{- if and .Values.prometheusRule.enabled $monitoring.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "lan-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+    {{- with $monitoring.ruleLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- if .Values.prometheusRule.overrideGroups }}
+    {{- toYaml .Values.prometheusRule.overrideGroups | nindent 4 }}
+    {{- else }}
+    - name: lanbrackets.availability
+      rules:
+        - alert: LanbracketsHTTP5xxRateHigh
+          expr: |
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*",status=~"5.."}[5m]))
+            /
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="{{ .Release.Namespace }}",exported_service=~"{{ include "lan-common.fullname" . }}.*"}[5m]))
+            > 0.02
+          for: 5m
+          labels:
+            severity: warning
+            app: lanbrackets
+          annotations:
+            summary: "LanBrackets 5xx rate > 2% for 5m"
+        - alert: LanbracketsPodRestartStorm
+          expr: |
+            max by (pod) (
+              increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}",pod=~"{{ include "lan-common.fullname" . }}.*"}[10m])
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            app: lanbrackets
+          annotations:
+            summary: "LanBrackets pod restarting repeatedly"
+    - name: lanbrackets.octane
+      rules:
+        - alert: LanbracketsOctaneWaitP99High
+          expr: histogram_quantile(0.99, sum(rate(octane_request_duration_seconds_bucket{namespace="{{ .Release.Namespace }}",app="lanbrackets"}[5m])) by (le)) > 1.0
+          for: 5m
+          labels:
+            severity: warning
+            app: lanbrackets
+          annotations:
+            summary: "Octane p99 request duration > 1s"
+    {{- end }}
+{{- end -}}

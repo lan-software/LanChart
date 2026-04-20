@@ -1,0 +1,13 @@
+LanBrackets has been installed into namespace "{{ .Release.Namespace }}" as release "{{ .Release.Name }}".
+
+Web Deployment: {{ include "lan-common.componentName" (dict "context" . "component" "web") }}
+
+{{- if .Values.ingress.enabled }}
+External URL: https://{{ (.Values.ingress.hosts | first).host }}
+{{- end }}
+
+Before pods accept traffic, ensure LanCore has provisioned an integration app
+for "{{ .Values.lancore.appSlug }}" and the token is available in Secret
+`{{ .Values.lancore.satellite.tokenSecret.name | default (printf "%s-lancore" (include "lan-common.name" .)) }}`.
+The umbrella's bootstrap Job handles this automatically when you install via
+`lan-software`.

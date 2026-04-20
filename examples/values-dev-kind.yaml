@@ -1,0 +1,126 @@
+# Dev values for a local `kind` cluster. See `make kind-up && make install-dev`.
+#
+# - Single-replica everything.
+# - TLS disabled (kind has no ACME reachability).
+# - Inline operator CRs: CNPG Cluster per sub-chart, Dragonfly CR per sub-chart.
+# - Stripe/WebPush/TMT2 disabled.
+# - monitoring.enabled=false (kind clusters usually don't have prom-operator).
+# - Hostnames flat: lancore.lan-software.local, lanbrackets.lan-software.local, …
+
+global:
+  domain: lan-software.local
+  scheme: http                   # kind has no ACME / TLS
+  lancoreHost: ""                # -> lancore.lan-software.local
+  satelliteHostStyle: flat       # -> <slug>.lan-software.local
+  tls:
+    issuer:
+      name: selfsigned
+      kind: ClusterIssuer
+  integrations:                  # auto-gen tokens via Helm lookup (stable across upgrades)
+    lanbrackets: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanentrance: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanshout:    { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanhelp:     { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+  s3:
+    mode: external
+  podSecurity:
+    profile: baseline
+  monitoring:
+    enabled: false
+  otel:
+    enabled: false
+
+lancore:
+  enabled: true
+  web:
+    replicaCount: 1
+    hpa: { enabled: false }
+    pdb: { enabled: false }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { memory: 768Mi }
+  worker:
+    replicaCount: 1
+    pdb: { enabled: false }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { memory: 512Mi }
+  ingress:
+    enabled: true
+    hosts: []                    # auto-derived (lancore.lan-software.local)
+    tls: { enabled: false }
+  database:
+    createCluster: true
+    cluster:
+      name: lancore-pg
+      instances: 1
+      storage: { size: 1Gi, storageClass: standard }
+  cache:
+    createInstance: true
+    instance:
+      name: lancore-dragonfly
+      replicas: 1
+      persistence: { enabled: false }
+  storage:
+    mode: external
+  stripe:  { enabled: false }
+  webpush: { enabled: false }
+  tmt2:    { enabled: false }
+  demo:    { enabled: true }
+  pulse:   { enabled: true, authorize: admin-only }
+  horizon: { enabled: true, authorize: admin-only }
+  networkPolicy:
+    enabled: false              # kind clusters often have no CNI enforcing NP
+
+lanbrackets:
+  enabled: true
+  web:
+    replicaCount: 1
+    hpa: { enabled: false }
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    hosts: []
+    tls: { enabled: false }
+  database: { createCluster: true }
+  cache:    { createInstance: true }
+  networkPolicy: { enabled: false }
+
+lanentrance:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    hosts: []
+    tls: { enabled: false }
+  database: { createCluster: true }
+  cache:    { createInstance: true }
+  networkPolicy: { enabled: false }
+
+lanshout:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    hosts: []
+    tls: { enabled: false }
+  database: { createCluster: true }
+  cache:    { createInstance: true }
+  networkPolicy: { enabled: false }
+
+lanhelp:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    hosts: []
+    tls: { enabled: false }
+  database: { createCluster: true }
+  cache:    { createInstance: true }
+  networkPolicy: { enabled: false }

@@ -1,0 +1,74 @@
+{{- if .Values.configMap.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lan-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+data:
+  # --- Database (non-secret) ---
+  DB_CONNECTION: "pgsql"
+  DB_HOST: {{ .Values.database.existing.host | default (printf "%s-rw" .Values.database.cluster.name) | quote }}
+  DB_PORT: {{ .Values.database.existing.port | default 5432 | quote }}
+  DB_DATABASE: {{ .Values.database.existing.database | quote }}
+  DB_USERNAME: {{ .Values.database.existing.username | quote }}
+
+  # --- Cache / Redis-compatible (Dragonfly) ---
+  REDIS_HOST: {{ .Values.cache.existing.host | default .Values.cache.instance.name | quote }}
+  REDIS_PORT: {{ .Values.cache.existing.port | default 6379 | quote }}
+  CACHE_STORE: "redis"
+  SESSION_DRIVER: "redis"
+  QUEUE_CONNECTION: "redis"
+  HORIZON_PREFIX: "lancore-horizon:"
+  REDIS_CACHE_DB: {{ .Values.cache.databases.cache | quote }}
+  REDIS_DB: {{ .Values.cache.databases.sessions | quote }}
+
+  # --- Object storage (non-secret endpoints only) ---
+  FILESYSTEM_DISK: "s3-private"
+  AWS_DEFAULT_REGION: {{ .Values.storage.public.region | quote }}
+  AWS_PUBLIC_BUCKET: {{ .Values.storage.public.bucket | quote }}
+  AWS_PUBLIC_ENDPOINT: {{ .Values.storage.public.endpoint | quote }}
+  AWS_PUBLIC_USE_PATH_STYLE_ENDPOINT: {{ .Values.storage.public.pathStyle | quote }}
+  AWS_PRIVATE_BUCKET: {{ .Values.storage.private.bucket | quote }}
+  AWS_PRIVATE_ENDPOINT: {{ .Values.storage.private.endpoint | quote }}
+  AWS_PRIVATE_USE_PATH_STYLE_ENDPOINT: {{ .Values.storage.private.pathStyle | quote }}
+
+  # --- Mail ---
+  MAIL_MAILER: {{ .Values.mail.driver | quote }}
+  MAIL_HOST: {{ .Values.mail.host | quote }}
+  MAIL_PORT: {{ .Values.mail.port | quote }}
+  MAIL_ENCRYPTION: {{ .Values.mail.encryption | quote }}
+  MAIL_FROM_ADDRESS: {{ .Values.mail.from.address | quote }}
+  MAIL_FROM_NAME: {{ .Values.mail.from.name | quote }}
+
+  # --- Feature flags ---
+  APP_DEMO: {{ .Values.demo.enabled | quote }}
+  STRIPE_ENABLED: {{ .Values.stripe.enabled | quote }}
+  WEBPUSH_ENABLED: {{ .Values.webpush.enabled | quote }}
+  TMT2_ENABLED: {{ .Values.tmt2.enabled | quote }}
+  {{- if .Values.tmt2.enabled }}
+  TMT2_BASE_URL: {{ .Values.tmt2.baseUrl | quote }}
+  {{- end }}
+
+  # --- Ticketing ---
+  TICKET_SIGNING_KEYS_PATH: {{ .Values.ticketing.signingKeys.mountPath | quote }}
+  {{- if .Values.ticketing.signingKeys.activeKid }}
+  TICKET_ACTIVE_KID: {{ .Values.ticketing.signingKeys.activeKid | quote }}
+  {{- end }}
+
+  # --- Integrations: host derivation (consumed by config/integrations.php) ---
+  LANCORE_DOMAIN: {{ .Values.global.domain | quote }}
+  LANCORE_HOST: {{ include "lan-common.lancoreHost" . | quote }}
+  LANCORE_SATELLITE_HOST_STYLE: {{ .Values.global.satelliteHostStyle | default "flat" | quote }}
+  LANCORE_SATELLITE_SCHEME: {{ include "lan-common.scheme" . | quote }}
+  LANCORE_RELEASE_NAME: {{ .Release.Name | quote }}
+  LANCORE_RELEASE_REVISION: {{ .Release.Revision | quote }}
+
+  # Per-satellite host overrides (empty unless operator overrode; the
+  # reconciler falls back to the computed style when empty).
+  LANBRACKETS_HOST: {{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanbrackets") | quote }}
+  LANENTRANCE_HOST: {{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanentrance") | quote }}
+  LANSHOUT_HOST: {{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanshout") | quote }}
+  LANHELP_HOST: {{ include "lan-common.satelliteHost" (dict "context" . "slug" "lanhelp") | quote }}
+{{- end -}}

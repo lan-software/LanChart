@@ -1,0 +1,36 @@
+{{- if .Values.configMap.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lan-common.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+data:
+  DB_CONNECTION: "pgsql"
+  DB_HOST: {{ .Values.database.existing.host | default (printf "%s-rw" .Values.database.cluster.name) | quote }}
+  DB_PORT: {{ .Values.database.existing.port | default 5432 | quote }}
+  DB_DATABASE: {{ .Values.database.existing.database | quote }}
+  DB_USERNAME: {{ .Values.database.existing.username | quote }}
+
+  REDIS_HOST: {{ .Values.cache.existing.host | default .Values.cache.instance.name | quote }}
+  REDIS_PORT: {{ .Values.cache.existing.port | default 6379 | quote }}
+  CACHE_STORE: "redis"
+  QUEUE_CONNECTION: "database"   # LanBrackets uses the database queue
+  SESSION_DRIVER: "database"
+  BROADCAST_CONNECTION: "log"
+
+  MAIL_MAILER: {{ .Values.mail.driver | quote }}
+  MAIL_HOST: {{ .Values.mail.host | quote }}
+  MAIL_PORT: {{ .Values.mail.port | quote }}
+  MAIL_ENCRYPTION: {{ .Values.mail.encryption | quote }}
+  MAIL_FROM_ADDRESS: {{ .Values.mail.from.address | quote }}
+  MAIL_FROM_NAME: {{ .Values.mail.from.name | quote }}
+
+  # --- LanCore integration (computed from global.domain + style) ---
+  LANCORE_ENABLED: "true"
+  LANCORE_APP_SLUG: {{ .Values.lancore.appSlug | quote }}
+  LANCORE_BASE_URL: {{ include "lan-common.lancoreBaseUrl" . | quote }}
+  LANCORE_INTERNAL_URL: {{ include "lan-common.lancoreInternalUrl" . | quote }}
+  LANCORE_CALLBACK_URL: {{ include "lan-common.satelliteCallbackUrl" (dict "context" . "slug" .Values.lancore.appSlug) | quote }}
+{{- end -}}

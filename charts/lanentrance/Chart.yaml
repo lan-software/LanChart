@@ -1,0 +1,18 @@
+apiVersion: v2
+name: lanentrance
+description: LanEntrance — check-in / door / entry handling. Server flavor, LanCore SSO satellite with JWKS-backed ticket validation.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+sources:
+  - https://github.com/lan-software/lanentrance
+  - https://github.com/lan-software/LanChart
+maintainers:
+  - name: Markus Kohn
+    email: post@markus-kohn.com
+keywords: [lanentrance, lan-software, laravel]
+dependencies:
+  - name: lan-common
+    version: 0.1.0
+    repository: "file://../lan-common"

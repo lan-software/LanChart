@@ -1,0 +1,27 @@
+{{- if .Values.cache.createInstance -}}
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: {{ .Values.cache.instance.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.cache.instance.replicas }}
+  {{- with .Values.cache.instance.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if .Values.cache.instance.persistence.enabled }}
+  snapshot:
+    cron: "0 */6 * * *"
+    persistentVolumeClaimSpec:
+      accessModes: ["ReadWriteOnce"]
+      {{- if .Values.cache.instance.persistence.storageClass }}
+      storageClassName: {{ .Values.cache.instance.persistence.storageClass | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.cache.instance.persistence.size }}
+  {{- end }}
+{{- end -}}

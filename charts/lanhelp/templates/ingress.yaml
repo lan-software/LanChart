@@ -1,0 +1,1 @@
+{{- include "lan-common.ingress" (dict "context" . "component" "web" "servicePort" 80) }}

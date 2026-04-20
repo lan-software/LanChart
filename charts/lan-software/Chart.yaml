@@ -1,0 +1,48 @@
+apiVersion: v2
+name: lan-software
+description: Umbrella chart for the Lan Software ecosystem — deploys LanCore plus satellite apps (LanBrackets, LanEntrance, LanShout, LanHelp) onto a Kubernetes 1.29+ cluster with operator-managed Postgres (CloudNativePG), cache (Dragonfly), and S3 (external or MinIO).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.29.0-0"
+home: https://lan-software.de
+icon: https://lan-software.de/logo.png
+sources:
+  - https://github.com/lan-software/LanChart
+maintainers:
+  - name: Markus Kohn
+    email: post@markus-kohn.com
+keywords:
+  - lan-software
+  - umbrella
+  - laravel
+  - lan-party
+dependencies:
+  - name: lan-common
+    version: 0.1.0
+    repository: "file://../lan-common"
+  - name: lancore
+    alias: lancore
+    version: 0.1.0
+    repository: "file://../lancore"
+    condition: lancore.enabled
+  - name: lanbrackets
+    alias: lanbrackets
+    version: 0.1.0
+    repository: "file://../lanbrackets"
+    condition: lanbrackets.enabled
+  - name: lanentrance
+    alias: lanentrance
+    version: 0.1.0
+    repository: "file://../lanentrance"
+    condition: lanentrance.enabled
+  - name: lanshout
+    alias: lanshout
+    version: 0.1.0
+    repository: "file://../lanshout"
+    condition: lanshout.enabled
+  - name: lanhelp
+    alias: lanhelp
+    version: 0.1.0
+    repository: "file://../lanhelp"
+    condition: lanhelp.enabled

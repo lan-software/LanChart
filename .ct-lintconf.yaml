@@ -1,0 +1,5 @@
+rules:
+  # Library chart has no icon; don't require one.
+  icon: disable
+  # Generated READMEs sometimes drift from values.yaml between helm-docs runs.
+  readme-exists: warning

@@ -1,0 +1,9 @@
+*.tgz
+charts/*/charts/
+charts/*/Chart.lock
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+.sbom/

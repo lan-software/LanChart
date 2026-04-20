@@ -1,0 +1,177 @@
+{{- if .Values.ticketing.signingKeys.rotation.enabled -}}
+{{- /*
+  Rotates the Ed25519 ticket-signing keyring on a schedule (default: monthly).
+
+  Two-stage pod: the init container runs `php artisan tickets:keys:rotate
+  --emit-secret-patch=/var/rotation/patch.yaml` using the LanCore image;
+  the main container is a kubectl pod that applies the patch to the
+  signing-keys Secret and then bumps a pod-template annotation on the web +
+  worker Deployments to trigger a rolling restart.
+
+  Requires a LanCore patch landing the `--emit-secret-patch=<path>` flag on
+  `php artisan tickets:keys:rotate` so the rotation command emits the patch
+  YAML rather than writing to the legacy filesystem path. The CronJob is
+  gated by .Values.ticketing.signingKeys.rotation.enabled (default false)
+  until that LanCore patch is confirmed in production.
+
+  See SSDD §5.6 and ADR-0005 for design rationale.
+*/ -}}
+{{- $saName := printf "%s-keys-rotation" (include "lan-common.fullname" .) -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "lan-common.fullname" . }}-keys-rotate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-common.labels" (dict "context" . "component" "keys-rotation") | nindent 4 }}
+spec:
+  schedule: {{ .Values.ticketing.signingKeys.rotation.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.ticketing.signingKeys.rotation.historyLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.ticketing.signingKeys.rotation.historyLimit | default 3 }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ .Values.ticketing.signingKeys.rotation.activeDeadlineSeconds | default 300 }}
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            {{- include "lan-common.labels" (dict "context" . "component" "keys-rotation") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ $saName }}
+          {{- include "lan-common.imagePullSecrets" . | nindent 10 }}
+          securityContext:
+            {{- include "lan-common.podSecurityContext" . | nindent 12 }}
+          volumes:
+            - name: patch-output
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+            - name: supervisor-run
+              emptyDir: {}
+            - name: supervisor-log
+              emptyDir: {}
+            - name: caddy-data
+              emptyDir: {}
+            - name: caddy-config
+              emptyDir: {}
+            - name: storage-framework
+              emptyDir: {}
+            - name: storage-logs
+              emptyDir: {}
+            - name: storage-app
+              emptyDir: {}
+            - name: bootstrap-cache
+              emptyDir: {}
+          initContainers:
+            # 1/2: rotate the key and emit a Secret patch YAML.
+            - name: rotate
+              image: {{ include "lan-common.image" (dict "context" . "image" .Values.image) }}
+              imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+              securityContext:
+                {{- include "lan-common.containerSecurityContext" . | nindent 16 }}
+              command:
+                - php
+                - artisan
+                - tickets:keys:rotate
+                - --emit-secret-patch=/var/rotation/patch.yaml
+              env:
+                - name: ROLE
+                  value: "migrate"
+                - name: SKIP_MIGRATE
+                  value: "1"
+                - name: SKIP_CACHE
+                  value: "1"
+                {{- include "lan-common.commonEnv" (dict "context" .) | nindent 16 }}
+                - name: TICKET_TOKEN_PEPPER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.ticketing.tokenPepperSecret.name }}
+                      key: {{ .Values.ticketing.tokenPepperSecret.key }}
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.existing.passwordSecret.name }}
+                      key: {{ .Values.database.existing.passwordSecret.key }}
+              envFrom:
+                {{- if .Values.configMap.enabled }}
+                - configMapRef:
+                    name: {{ include "lan-common.fullname" . }}
+                {{- end }}
+                {{- if .Values.appSecrets.enabled }}
+                - secretRef:
+                    name: {{ include "lan-common.fullname" . }}-app
+                {{- end }}
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits:   { memory: 512Mi }
+              volumeMounts:
+                - name: patch-output
+                  mountPath: /var/rotation
+                - name: tmp
+                  mountPath: /tmp
+                - name: supervisor-run
+                  mountPath: /var/run/supervisor
+                - name: supervisor-log
+                  mountPath: /var/log/supervisor
+                - name: caddy-data
+                  mountPath: /data/caddy
+                - name: caddy-config
+                  mountPath: /config/caddy
+                - name: storage-framework
+                  mountPath: /var/www/html/storage/framework
+                - name: storage-logs
+                  mountPath: /var/www/html/storage/logs
+                - name: storage-app
+                  mountPath: /var/www/html/storage/app
+                - name: bootstrap-cache
+                  mountPath: /var/www/html/bootstrap/cache
+          containers:
+            # 2/2: apply the patch and roll web + worker Deployments.
+            - name: apply
+              image: "bitnami/kubectl:1.31"
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1001
+                runAsGroup: 1001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  test -s /var/rotation/patch.yaml || { echo "no patch produced"; exit 1; }
+                  kubectl -n "$NAMESPACE" patch secret "$SECRET_NAME" --patch-file /var/rotation/patch.yaml
+                  ROTATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  for DEPLOY in "$WEB_DEPLOY" "$WORKER_DEPLOY"; do
+                    kubectl -n "$NAMESPACE" patch deployment "$DEPLOY" \
+                      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"lan-software.mawiguko.dev/key-rotation\":\"$ROTATED_AT\"}}}}}"
+                  done
+                  echo "keyring rotated at $ROTATED_AT; Deployments rolled."
+              env:
+                - name: NAMESPACE
+                  value: {{ .Release.Namespace | quote }}
+                - name: SECRET_NAME
+                  value: {{ include "lancore.signingKeysSecretName" . | quote }}
+                - name: WEB_DEPLOY
+                  value: {{ include "lan-common.componentName" (dict "context" . "component" "web") | quote }}
+                - name: WORKER_DEPLOY
+                  value: {{ include "lan-common.componentName" (dict "context" . "component" "worker") | quote }}
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { memory: 128Mi }
+              volumeMounts:
+                - name: patch-output
+                  mountPath: /var/rotation
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+{{- end -}}

@@ -1,0 +1,3 @@
+{{- if .Values.web.enabled -}}
+{{- include "lan-common.networkPolicy" (dict "context" . "component" "web" "ports" (list 80)) }}
+{{- end -}}

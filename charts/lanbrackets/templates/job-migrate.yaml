@@ -1,0 +1,8 @@
+{{- $extraEnv := list
+  (dict "name" "FLAVOR" "value" "octane")
+  (dict "name" "DB_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
+    "name" .Values.database.existing.passwordSecret.name
+    "key"  .Values.database.existing.passwordSecret.key
+  )))
+-}}
+{{- include "lan-common.jobMigrate" (dict "context" . "extraEnv" $extraEnv) }}

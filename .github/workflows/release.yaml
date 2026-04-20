@@ -1,0 +1,115 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write   # required for cosign keyless signing
+
+env:
+  HELM_VERSION: v3.16.3
+  COSIGN_VERSION: v2.4.1
+  SYFT_VERSION: v1.14.0
+  REGISTRY: ghcr.io
+  REGISTRY_NAMESPACE: lan-software/charts
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Install syft
+        run: |
+          curl -L -o /tmp/syft.tgz "https://github.com/anchore/syft/releases/download/${{ env.SYFT_VERSION }}/syft_${{ env.SYFT_VERSION }}_linux_amd64.tar.gz"
+          mkdir -p /tmp/syft-bin && tar -xzf /tmp/syft.tgz -C /tmp/syft-bin
+          sudo mv /tmp/syft-bin/syft /usr/local/bin/
+
+      - name: Resolve chart dependencies
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            helm dependency update charts/$chart
+          done
+
+      - name: Package all charts
+        run: |
+          mkdir -p dist
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            helm package charts/$chart -d dist
+          done
+          ls -la dist/
+
+      - name: Push charts to OCI registry
+        run: |
+          for tgz in dist/*.tgz; do
+            helm push "$tgz" oci://${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}
+          done
+
+      - name: Resolve pushed digests
+        id: digests
+        run: |
+          REF=${GITHUB_REF_NAME#v}
+          REFS=""
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            REF_LINE="oci://${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/${chart}:${REF}"
+            REFS="${REFS}${REF_LINE}\n"
+          done
+          echo -e "Pushed charts:\n${REFS}"
+          echo "tag=${REF}" >> "$GITHUB_OUTPUT"
+
+      - name: cosign sign (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            cosign sign --yes \
+              ${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/${chart}:${{ steps.digests.outputs.tag }}
+          done
+
+      - name: Generate SBOMs
+        run: |
+          mkdir -p sbom
+          for tgz in dist/*.tgz; do
+            base="$(basename "$tgz" .tgz)"
+            syft "$tgz" -o spdx-json="sbom/${base}.spdx.json"
+          done
+
+      - name: Attach SBOM attestations
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for chart in lan-common lancore lanbrackets lanentrance lanshout lanhelp lan-software; do
+            BASE=$(ls sbom/${chart}-*.spdx.json | head -1)
+            if [ -n "$BASE" ]; then
+              cosign attest --yes \
+                --predicate "$BASE" \
+                --type spdxjson \
+                ${{ env.REGISTRY }}/${{ env.REGISTRY_NAMESPACE }}/${chart}:${{ steps.digests.outputs.tag }}
+            fi
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lan-software-charts-${{ steps.digests.outputs.tag }}
+          path: |
+            dist/*.tgz
+            sbom/*.spdx.json
+          retention-days: 90

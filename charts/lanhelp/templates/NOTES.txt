@@ -1,0 +1,11 @@
+LanHelp has been installed into namespace "{{ .Release.Namespace }}" as release "{{ .Release.Name }}".
+
+Web Deployment: {{ include "lan-common.componentName" (dict "context" . "component" "web") }}
+
+{{- if .Values.ingress.enabled }}
+External URL: https://{{ (.Values.ingress.hosts | first).host }}
+{{- end }}
+
+The LANCORE_TOKEN for LanHelp is provisioned by the umbrella's bootstrap Job
+and stored in Secret
+`{{ .Values.lancore.satellite.tokenSecret.name | default (printf "%s-lancore" (include "lan-common.name" .)) }}`.

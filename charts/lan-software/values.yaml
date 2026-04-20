@@ -1,0 +1,108 @@
+# Umbrella chart values for the Lan Software ecosystem.
+#
+# Values under `global:` propagate to every sub-chart. Values under
+# `lancore:`, `lanbrackets:`, etc. flow straight into the corresponding
+# sub-chart's Values (Helm standard umbrella-value scoping).
+#
+# Phase-3 canonical install: override `global.domain` (and optionally the
+# TLS issuer + host style) — everything else defaults. Integration-app
+# tokens are auto-generated and reconciled into LanCore by a pre-install
+# hook Job; operators can override per-slug tokens via
+# `global.integrations.<slug>.token` / `.webhookSecret`.
+
+global:
+  # Container image registry. Sub-charts append their per-app repository.
+  image:
+    registry: ghcr.io
+    pullSecrets: []
+
+  # Canonical deployment domain. Required.
+  domain: example.com
+
+  # URL scheme used to build Ingress / callback URLs.
+  scheme: https
+
+  # Where LanCore itself is reachable. Empty => lancore.<domain>. Override
+  # to run LanCore at the apex (e.g. `domain: lanparty.de`,
+  # `lancoreHost: lanparty.de`).
+  lancoreHost: ""
+
+  # How satellites are addressed relative to the domain.
+  #   flat     -> <slug>.<domain>         (e.g. lanhelp.lanparty.de)
+  #   prefixed -> <slug>.lancore.<domain> (e.g. lanhelp.lancore.lanparty.de)
+  #   custom   -> per-satellite host under global.integrations.<slug>.host
+  satelliteHostStyle: flat
+
+  # TLS issuer reference. Chart does NOT create the issuer.
+  tls:
+    issuer:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+  # Per-slug integration config / overrides. Used by:
+  #   - the umbrella's integrations-seed Secret (token + webhook secret),
+  #   - the host-computation helpers (host override when style: custom),
+  #   - the LanCore sub-chart to populate config/integrations.php env vars.
+  # Leave any string empty to fall back to auto-generated values (Helm
+  # `lookup` — stable across upgrades).
+  integrations:
+    lanbrackets:
+      host: ""
+      token: ""
+      announcementWebhookSecret: ""
+      rolesWebhookSecret: ""
+    lanentrance:
+      host: ""
+      token: ""
+      announcementWebhookSecret: ""
+      rolesWebhookSecret: ""
+    lanshout:
+      host: ""
+      token: ""
+      announcementWebhookSecret: ""
+      rolesWebhookSecret: ""
+    lanhelp:
+      host: ""
+      token: ""
+      announcementWebhookSecret: ""
+      rolesWebhookSecret: ""
+
+  # Stateful-infra operator picks (cluster prereqs).
+  postgres:
+    operator: cnpg
+  cache:
+    operator: dragonfly
+  s3:
+    mode: external
+
+  # Pod Security Admission profile. Phase 1 target = baseline (LanBase
+  # starts supervisord as root). restricted is a Phase 4 goal.
+  podSecurity:
+    profile: baseline
+
+  # Optional monitoring — requires prometheus-operator CRDs.
+  monitoring:
+    enabled: false
+    namespace: monitoring
+    ruleLabels: {}
+
+  # Optional OTel exporter; endpoint is injected into every pod's env.
+  otel:
+    enabled: false
+    endpoint: ""
+
+# --- Sub-charts toggles ---
+lancore:
+  enabled: true
+
+lanbrackets:
+  enabled: true
+
+lanentrance:
+  enabled: true
+
+lanshout:
+  enabled: true
+
+lanhelp:
+  enabled: true

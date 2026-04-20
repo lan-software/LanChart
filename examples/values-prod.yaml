@@ -1,0 +1,252 @@
+# Production-shaped values for the lan-software umbrella.
+#
+# Assumptions:
+#   - ghcr.io registry reachable
+#   - cert-manager + a "letsencrypt-prod" ClusterIssuer installed
+#   - CloudNativePG operator installed (the chart emits Cluster CRs)
+#   - Dragonfly Operator installed (the chart emits Dragonfly CRs)
+#   - prometheus-operator + Grafana installed (monitoring.enabled)
+#   - OTel Collector reachable at http://otel-collector.observability.svc.cluster.local:4318
+#   - External S3 bucket + credentials Secrets created out of band
+#   - SMTP credentials Secret created out of band
+#   - Stripe + WebPush credentials Secrets created out of band
+#   - Ticket-signing keyring Secret `lancore-ticket-signing-keys` created out of band
+#   - Admin basic-auth Secret `lancore-admin-basic-auth` created out of band
+#     (htpasswd -bc auth admin '…' && kubectl create secret generic …)
+#
+# TLS: Let's Encrypt production issuer; admin paths gated by nginx basic-auth.
+# Flip `ingress.adminAuth.mode` to `oauth2proxy` once LanCore ships OIDC
+# discovery (see ADR-0007, Phase 2a).
+
+global:
+  image:
+    registry: ghcr.io
+    pullSecrets: []
+  # Canonical deployment domain. Flip this and the whole fleet changes host.
+  domain: lanparty.de
+  scheme: https
+  # LanCore at a subdomain of the apex. Override to "lanparty.de" to run
+  # LanCore at the apex instead.
+  lancoreHost: lancore.lanparty.de
+  # Satellite hostnames: lanhelp.lanparty.de, lanshout.lanparty.de, etc.
+  # Flip to "prefixed" (lanhelp.lancore.lanparty.de) if LanCore is at apex.
+  satelliteHostStyle: flat
+  tls:
+    issuer:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+  # Per-satellite integration overrides (optional).
+  # When token/webhook secrets are empty, the umbrella auto-generates them
+  # via Helm `lookup` (stable across upgrades). Fill these in if you want
+  # ExternalSecrets / Vault to supply production credentials.
+  integrations:
+    lanbrackets: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanentrance: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanshout:    { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanhelp:     { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+  postgres:
+    operator: cnpg
+  cache:
+    operator: dragonfly
+  s3:
+    mode: external
+  podSecurity:
+    profile: baseline
+  monitoring:
+    enabled: true
+    namespace: monitoring
+    ruleLabels:
+      release: kube-prometheus-stack
+  otel:
+    enabled: true
+    endpoint: http://otel-collector.observability.svc.cluster.local:4318
+
+lancore:
+  enabled: true
+  web:
+    replicaCount: 3
+    hpa:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+    pdb:
+      enabled: true
+      minAvailable: 2
+    resources:
+      requests: { cpu: 500m, memory: 768Mi }
+      limits:   { memory: 1536Mi }
+  worker:
+    replicaCount: 2
+    pdb:
+      enabled: true
+      minAvailable: 1
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { memory: 1Gi }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []                    # auto-derived from global.lancoreHost
+    tls:
+      enabled: true
+      issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer }
+    adminPaths: [/horizon, /pulse]
+    adminAuth:
+      mode: basic
+      basic:
+        secretName: lancore-admin-basic-auth
+      # oauth2proxy:
+      #   upstream: http://oauth2-proxy.auth.svc.cluster.local:4180
+      #   signinBase: https://auth.example.com
+  database:
+    createCluster: true
+    cluster:
+      name: lancore-pg
+      instances: 3
+      storage: { size: 50Gi, storageClass: "" }
+      backup:
+        enabled: true
+        retentionPolicy: 30d
+        barmanObjectStore: {}
+    existing:
+      host: lancore-pg-rw.lan-software.svc.cluster.local
+      database: lancore
+      username: lancore
+      passwordSecret: { name: lancore-db, key: password }
+  cache:
+    createInstance: true
+    instance:
+      name: lancore-dragonfly
+      replicas: 1
+      resources:
+        requests: { cpu: 500m, memory: 1Gi }
+        limits:   { memory: 2Gi }
+      persistence: { enabled: true, storageClass: "", size: 20Gi }
+  storage:
+    mode: external
+    public:
+      bucket: lancore-public
+      endpoint: https://s3.example.com
+      region: eu-central-1
+      pathStyle: false
+      credentialsSecret: { name: lancore-s3-public }
+    private:
+      bucket: lancore-private
+      endpoint: https://s3.example.com
+      region: eu-central-1
+      pathStyle: false
+      credentialsSecret: { name: lancore-s3-private }
+  mail:
+    driver: smtp
+    host: smtp.example.com
+    port: 587
+    encryption: tls
+    credentialsSecret: { name: lancore-smtp }
+    from: { address: noreply@example.com, name: LanCore }
+  stripe:
+    enabled: true
+    credentialsSecret: { name: lancore-stripe }
+  webpush:
+    enabled: true
+    credentialsSecret: { name: lancore-webpush }
+  tmt2:
+    enabled: false
+  ticketing:
+    tokenPepperSecret: { name: lancore-ticketing, key: pepper }
+    signingKeys:
+      secretName: lancore-ticket-signing-keys
+      mountPath: /var/www/html/storage/keys/ticket_signing
+      defaultMode: 256
+      inlineKeys: {}
+      rotation:
+        enabled: false        # flip to true after LanCore ships --emit-secret-patch
+        schedule: "0 3 1 * *"
+  pulse:   { enabled: true,  authorize: admin-only }
+  horizon: { enabled: true,  authorize: admin-only }
+  demo:    { enabled: false }
+  networkPolicy:
+    enabled: true
+    allowFrom:
+      [ingress-nginx, prometheus, otel-collector, lanbrackets, lanentrance, lanshout, lanhelp]
+    allowToEgress:
+      [dns, postgres, cache, s3, smtp, stripe, webpush]
+  serviceMonitor:  { enabled: true, interval: 30s, scrapeTimeout: 10s, path: /metrics }
+  prometheusRule:  { enabled: true }
+
+lanbrackets:
+  enabled: true
+  web:
+    replicaCount: 2
+    hpa: { enabled: true, minReplicas: 2, maxReplicas: 6, targetCPUUtilizationPercentage: 70 }
+    pdb: { enabled: true, minAvailable: 1 }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []                    # auto-derived: lanbrackets.lanparty.de
+    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
+  database: { createCluster: true }
+  cache:    { createInstance: true, instance: { replicas: 1 } }
+  networkPolicy:
+    enabled: true
+    allowFrom: [ingress-nginx, prometheus, otel-collector]
+    allowToEgress: [dns, postgres, cache, lancore-internal]
+  serviceMonitor: { enabled: true }
+  prometheusRule: { enabled: true }
+
+lanentrance:
+  enabled: true
+  web:
+    replicaCount: 2
+    pdb: { enabled: true, minAvailable: 1 }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []                    # auto-derived: lanentrance.lanparty.de
+    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
+  database: { createCluster: true }
+  cache:    { createInstance: true, instance: { replicas: 1 } }
+  networkPolicy:
+    enabled: true
+    allowFrom: [ingress-nginx, prometheus, otel-collector]
+    allowToEgress: [dns, postgres, cache, lancore-internal]
+  serviceMonitor: { enabled: true }
+  prometheusRule: { enabled: true }
+
+lanshout:
+  enabled: true
+  web:
+    replicaCount: 2
+    pdb: { enabled: true, minAvailable: 1 }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []                    # auto-derived: lanshout.lanparty.de
+    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
+  database: { createCluster: true }
+  cache:    { createInstance: true, instance: { replicas: 1 } }
+  networkPolicy:
+    enabled: true
+    allowFrom: [ingress-nginx, prometheus, otel-collector]
+    allowToEgress: [dns, postgres, cache, lancore-internal]
+  serviceMonitor: { enabled: true }
+  prometheusRule: { enabled: true }
+
+lanhelp:
+  enabled: true
+  web:
+    replicaCount: 2
+    pdb: { enabled: true, minAvailable: 1 }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []                    # auto-derived: lanhelp.lanparty.de
+    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
+  database: { createCluster: true }
+  cache:    { createInstance: true, instance: { replicas: 1 } }
+  networkPolicy:
+    enabled: true
+    allowFrom: [ingress-nginx, prometheus, otel-collector]
+    allowToEgress: [dns, postgres, cache, lancore-internal, smtp]
+  serviceMonitor: { enabled: true }
+  prometheusRule: { enabled: true }
