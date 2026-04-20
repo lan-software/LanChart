@@ -38,7 +38,10 @@ jobs:
 
       - name: Install syft
         run: |
-          curl -L -o /tmp/syft.tgz "https://github.com/anchore/syft/releases/download/${{ env.SYFT_VERSION }}/syft_${{ env.SYFT_VERSION }}_linux_amd64.tar.gz"
+          # Release artifacts are named `syft_1.14.0_linux_amd64.tar.gz` (no
+          # leading `v`), but the release tag is `v1.14.0`. Strip the prefix.
+          SYFT_SEMVER="${SYFT_VERSION#v}"
+          curl -fsSL -o /tmp/syft.tgz "https://github.com/anchore/syft/releases/download/${SYFT_VERSION}/syft_${SYFT_SEMVER}_linux_amd64.tar.gz"
           mkdir -p /tmp/syft-bin && tar -xzf /tmp/syft.tgz -C /tmp/syft-bin
           sudo mv /tmp/syft-bin/syft /usr/local/bin/
 
