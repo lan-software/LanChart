@@ -1,8 +1,11 @@
 package main
 
-# Every chart-managed resource MUST carry the recommended Kubernetes labels.
-# This is a stricter-than-Helm baseline — app.kubernetes.io/part-of must be
-# "lan-software" so the whole umbrella is greppable from kubectl.
+# Every chart-managed resource MUST carry the recommended Kubernetes labels,
+# and `app.kubernetes.io/part-of` must be "lan-software" so the whole
+# umbrella is greppable from kubectl.
+#
+# Runs under conftest --combine; each element of `input` is
+# `{path, contents: <doc>}`.
 
 required_labels := [
   "app.kubernetes.io/name",
@@ -12,21 +15,25 @@ required_labels := [
   "helm.sh/chart",
 ]
 
-# Skip some kinds that commonly don't carry these labels (hook tokens, etc).
 skip_kinds := {"CustomResourceDefinition"}
 
 deny[msg] {
-  not skip_kinds[input.kind]
-  input.metadata.name
+  some i
+  obj := input[i].contents
+  obj.metadata.name
+  not skip_kinds[obj.kind]
   label := required_labels[_]
-  not input.metadata.labels[label]
-  msg := sprintf("%s/%s missing required label %q", [input.kind, input.metadata.name, label])
+  not object.get(obj.metadata, "labels", {})[label]
+  msg := sprintf("%s/%s missing required label %q", [obj.kind, obj.metadata.name, label])
 }
 
 deny[msg] {
-  not skip_kinds[input.kind]
-  input.metadata.name
-  input.metadata.labels["app.kubernetes.io/part-of"]
-  input.metadata.labels["app.kubernetes.io/part-of"] != "lan-software"
-  msg := sprintf("%s/%s has app.kubernetes.io/part-of=%q, expected %q", [input.kind, input.metadata.name, input.metadata.labels["app.kubernetes.io/part-of"], "lan-software"])
+  some i
+  obj := input[i].contents
+  obj.metadata.name
+  not skip_kinds[obj.kind]
+  part_of := object.get(obj.metadata, "labels", {})["app.kubernetes.io/part-of"]
+  part_of
+  part_of != "lan-software"
+  msg := sprintf("%s/%s has app.kubernetes.io/part-of=%q, expected %q", [obj.kind, obj.metadata.name, part_of, "lan-software"])
 }

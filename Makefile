@@ -117,7 +117,7 @@ verify-hostnames: dep-up ## Assert every rendered Ingress host aligns with globa
 policy-check: dep-up ## Render prod values and run conftest against policies/
 	@command -v conftest >/dev/null 2>&1 || { echo "conftest not installed: see docs/supply-chain.md"; exit 1; }
 	helm template $(RELEASE) $(UMBRELLA) -n $(NS) -f examples/values-prod.yaml \
-	  | conftest test --policy policies/ -
+	  | conftest test --policy policies/ --combine -
 
 .PHONY: sign-local
 sign-local: ## Sign a local chart tarball with cosign (keyful if COSIGN_KEY=…, else keyless OIDC)

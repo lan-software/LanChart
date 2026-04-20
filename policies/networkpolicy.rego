@@ -1,42 +1,38 @@
 package main
 
 # Every Deployment in the release namespace must have at least one
-# NetworkPolicy whose podSelector matches its pod template labels, UNLESS
-# the Deployment explicitly opts out via
-# `lan-software.mawiguko.dev/skip-netpol: "true"` annotation.
+# NetworkPolicy whose podSelector matchLabels is a subset of the
+# Deployment's pod-template labels. Opt out per-Deployment by annotating
+# `lan-software.mawiguko.dev/skip-netpol: "true"`.
 #
-# This runs against the full rendered manifest stream; conftest provides
-# `input_documents` as a collection of all documents when you call it with
-# `--combine`. We therefore run it as two passes: first with individual
-# documents (checks labels + security), then here we build a set view.
-
-deployments[obj] {
-  obj := input
-  obj.kind == "Deployment"
-}
-
-netpols[obj] {
-  obj := input
-  obj.kind == "NetworkPolicy"
-}
+# Runs under conftest --combine; conftest passes each document wrapped as
+# `{path, contents}`, so we index through `.contents`.
 
 deny[msg] {
-  d := deployments[_]
-  not object.get(d.metadata, "annotations", {})["lan-software.mawiguko.dev/skip-netpol"] == "true"
-  pod_labels := d.spec.template.metadata.labels
-  not network_policy_matches(pod_labels)
+  some i
+  d := input[i].contents
+  d.kind == "Deployment"
+  not skip_netpol(d)
+  pod_labels := object.get(d.spec.template.metadata, "labels", {})
+  not matching_netpol_exists(pod_labels)
   msg := sprintf("Deployment/%s has no matching NetworkPolicy", [d.metadata.name])
 }
 
-network_policy_matches(labels) {
-  np := netpols[_]
-  match_labels := object.get(np.spec.podSelector, "matchLabels", {})
-  every_label_matches(match_labels, labels)
+skip_netpol(d) {
+  annotations := object.get(d.metadata, "annotations", {})
+  annotations["lan-software.mawiguko.dev/skip-netpol"] == "true"
 }
 
-every_label_matches(required, actual) {
-  # Every key in `required` must exist in `actual` with the same value.
-  required[key] == actual[key]
-  # Trigger the evaluation for all keys:
-  count({k | required[k]}) == count({k | required[k]; required[k] == actual[k]})
+matching_netpol_exists(pod_labels) {
+  some j
+  np := input[j].contents
+  np.kind == "NetworkPolicy"
+  match_labels := object.get(np.spec.podSelector, "matchLabels", {})
+  selector_matches(match_labels, pod_labels)
+}
+
+selector_matches(required, actual) {
+  count(required) > 0
+  matched := {key | some key; required[key] == actual[key]}
+  count(matched) == count(required)
 }

@@ -107,4 +107,4 @@ jobs:
         run: helm template lan-software charts/lan-software -f examples/values-prod.yaml --namespace lan-software > /tmp/rendered-prod.yaml
 
       - name: conftest test
-        run: conftest test --policy policies/ /tmp/rendered-prod.yaml
+        run: conftest test --policy policies/ --combine /tmp/rendered-prod.yaml
