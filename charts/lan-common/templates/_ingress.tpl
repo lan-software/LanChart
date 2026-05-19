@@ -12,6 +12,17 @@ via .Values.ingress.adminAuth.mode:
 The chart does NOT deploy an oauth2-proxy pod; ADR-0002 keeps cluster-wide
 auth infrastructure out of app charts.
 
+TLS termination is selected via .Values.global.tls.mode (see ADR-0010):
+
+  - "acme"           Emit `cert-manager.io/cluster-issuer` annotation and
+                     declare spec.tls so cert-manager issues a Certificate.
+  - "preprovisioned" Declare spec.tls with the operator-supplied
+                     `ingress.tls.secretName` (required). No annotation.
+  - "passthrough"    No spec.tls at all — an upstream reverse proxy
+                     terminates TLS and forwards plain HTTP to the cluster.
+                     A `force-ssl-redirect: "false"` annotation prevents
+                     ingress-nginx from rejecting the plain traffic.
+
 Because nginx-ingress scopes auth annotations to the entire Ingress, the
 admin paths live on a **second** Ingress object named `{{ fullname }}-admin`
 that reuses the same host, rewrites to the main Service, and carries the
@@ -28,6 +39,11 @@ Usage: include "lan-common.ingress" (dict "context" . "component" "web" "service
 {{- $adminAuth := ($ctx.Values.ingress.adminAuth | default dict) -}}
 {{- $adminMode := $adminAuth.mode | default "none" -}}
 {{- $adminPaths := $ctx.Values.ingress.adminPaths | default list -}}
+{{- $tlsMode := (($ctx.Values.global).tls).mode | default "acme" -}}
+{{- $tlsAcme := ((($ctx.Values.global).tls).acme) | default dict -}}
+{{- $issuerName := ($tlsAcme.issuerRef).name | default "letsencrypt-prod" -}}
+{{- $perAppSecret := ($ctx.Values.ingress.tls).secretName | default "" -}}
+{{- $defaultSecret := printf "%s-tls" (include "lan-common.fullname" $ctx) -}}
 {{- /* Host-derivation fallback:
       - If ingress.hosts[].host is set, use it verbatim.
       - Else if .Values.lancore.appSlug is set, derive via lan-common.satelliteHost.
@@ -52,6 +68,14 @@ Usage: include "lan-common.ingress" (dict "context" . "component" "web" "service
 {{- else -}}
 {{- $resolvedHosts = list (dict "host" $defaultHost "paths" (list (dict "path" "/" "pathType" "Prefix"))) -}}
 {{- end -}}
+{{- /* Resolve TLS spec + annotations based on global.tls.mode */ -}}
+{{- $tlsEnabled := ne $tlsMode "passthrough" -}}
+{{- $tlsSecretName := "" -}}
+{{- if eq $tlsMode "acme" -}}
+{{- $tlsSecretName = $perAppSecret | default $defaultSecret -}}
+{{- else if eq $tlsMode "preprovisioned" -}}
+{{- $tlsSecretName = required (printf "global.tls.mode=preprovisioned requires ingress.tls.secretName to be set on chart %s" (include "lan-common.name" $ctx)) $perAppSecret -}}
+{{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -60,8 +84,12 @@ metadata:
   labels:
     {{- include "lan-common.labels" (dict "context" $ctx "component" $component) | nindent 4 }}
   annotations:
-    {{- if $ctx.Values.ingress.tls.enabled }}
-    cert-manager.io/cluster-issuer: {{ $ctx.Values.ingress.tls.issuerRef.name | quote }}
+    {{- if eq $tlsMode "acme" }}
+    cert-manager.io/cluster-issuer: {{ $issuerName | quote }}
+    {{- end }}
+    {{- if eq $tlsMode "passthrough" }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     {{- end }}
     {{- with $ctx.Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
@@ -70,13 +98,13 @@ spec:
   {{- if $ctx.Values.ingress.className }}
   ingressClassName: {{ $ctx.Values.ingress.className }}
   {{- end }}
-  {{- if $ctx.Values.ingress.tls.enabled }}
+  {{- if $tlsEnabled }}
   tls:
     - hosts:
         {{- range $resolvedHosts }}
         - {{ .host | quote }}
         {{- end }}
-      secretName: {{ $ctx.Values.ingress.tls.secretName | default (printf "%s-tls" (include "lan-common.fullname" $ctx)) }}
+      secretName: {{ $tlsSecretName }}
   {{- end }}
   rules:
     {{- range $resolvedHosts }}
@@ -104,8 +132,12 @@ metadata:
     {{- include "lan-common.labels" (dict "context" $ctx "component" $component) | nindent 4 }}
     lan-software.mawiguko.dev/admin-ingress: "true"
   annotations:
-    {{- if $ctx.Values.ingress.tls.enabled }}
-    cert-manager.io/cluster-issuer: {{ $ctx.Values.ingress.tls.issuerRef.name | quote }}
+    {{- if eq $tlsMode "acme" }}
+    cert-manager.io/cluster-issuer: {{ $issuerName | quote }}
+    {{- end }}
+    {{- if eq $tlsMode "passthrough" }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
     {{- end }}
     {{- if eq $adminMode "basic" }}
     nginx.ingress.kubernetes.io/auth-type: basic
@@ -123,13 +155,13 @@ spec:
   {{- if $ctx.Values.ingress.className }}
   ingressClassName: {{ $ctx.Values.ingress.className }}
   {{- end }}
-  {{- if $ctx.Values.ingress.tls.enabled }}
+  {{- if $tlsEnabled }}
   tls:
     - hosts:
         {{- range $resolvedHosts }}
         - {{ .host | quote }}
         {{- end }}
-      secretName: {{ $ctx.Values.ingress.tls.secretName | default (printf "%s-tls" (include "lan-common.fullname" $ctx)) }}
+      secretName: {{ $tlsSecretName }}
   {{- end }}
   rules:
     {{- range $host := $resolvedHosts }}

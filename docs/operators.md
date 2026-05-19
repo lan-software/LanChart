@@ -17,7 +17,7 @@ being up first so webhook admission works):
        -n ingress-nginx --create-namespace
    ```
 
-2. **cert-manager**
+2. **cert-manager** *(required only when `global.tls.mode: acme`)*
    ```sh
    helm repo add jetstack https://charts.jetstack.io
    helm upgrade --install cert-manager jetstack/cert-manager \
@@ -38,12 +38,25 @@ being up first so webhook admission works):
        solvers:
          - http01: { ingress: { class: nginx } }
    ```
+   Skip this step entirely when running the chart with
+   `global.tls.mode: preprovisioned` (operator supplies TLS Secrets manually)
+   or `global.tls.mode: passthrough` (an upstream reverse proxy terminates TLS).
+   See [`docs/adr/0010-tls-modes.md`](adr/0010-tls-modes.md).
 
-3. **CloudNativePG**
+3. **Zalando postgres-operator** *(required only when `global.database.provider: zalando`)*
    ```sh
-   helm repo add cnpg https://cloudnative-pg.github.io/charts
-   helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace
+   helm repo add postgres-operator-charts https://opensource.zalando.com/postgres-operator/charts/postgres-operator/
+   helm upgrade --install postgres-operator postgres-operator-charts/postgres-operator \
+       -n postgres-operator --create-namespace
    ```
+   The chart emits a single `acid.zalan.do/v1 postgresql` CR with one
+   database + login role per Lan-Software app. The operator generates a
+   credentials Secret per role under
+   `<role>.<clusterName>.credentials.postgresql.acid.zalan.do` (consumed by
+   the `lan-common.dbPasswordSecretName` helper). See
+   [`docs/adr/0009-zalando-postgres-operator.md`](adr/0009-zalando-postgres-operator.md).
+   Skip this step when using an existing Postgres
+   (`global.database.provider: external`).
 
 4. **Dragonfly Operator** (Redis wire-protocol compatible cache)
    ```sh
@@ -70,7 +83,7 @@ being up first so webhook admission works):
 |----------|---------------|------|
 | ingress-nginx | 4.11.x | — |
 | cert-manager | 1.16.x | `certmanager.io`, `acme.cert-manager.io` |
-| CloudNativePG | 1.24.x | `postgresql.cnpg.io/v1` |
+| Zalando postgres-operator | 1.12.x | `acid.zalan.do/v1` |
 | Dragonfly Operator | 1.1.x | `dragonflydb.io/v1alpha1` |
 | MinIO Operator | 7.x | `minio.min.io/v2` |
 | kube-prometheus-stack | 65.x | `monitoring.coreos.com/*` |

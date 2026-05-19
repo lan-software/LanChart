@@ -1,0 +1,62 @@
+{{- /*
+Shared Postgres cluster managed by the Zalando postgres-operator.
+
+Renders one `acid.zalan.do/v1 postgresql` CR that hosts a database + login
+role for every enabled Lan-Software app (LanCore + satellites). The operator
+creates a credentials Secret per role under the conventional name
+`<role>.<clusterName>.credentials.postgresql.acid.zalan.do`, which the
+sub-charts pick up via the lan-common.dbPasswordSecretName helper.
+
+Only emitted when global.database.provider == "zalando". When provider is
+"external" no CR is rendered and apps connect to the user-supplied host.
+
+The postgres-operator install itself is a cluster-scoped prerequisite (see
+docs/operators.md and ADR-0002) and is intentionally NOT part of this chart.
+*/ -}}
+{{- $g := .Values.global | default dict -}}
+{{- $db := $g.database | default dict -}}
+{{- if eq ($db.provider | default "external") "zalando" -}}
+{{- $z := $db.zalando | default dict -}}
+{{- $cluster := required "global.database.zalando.clusterName is required" $z.clusterName -}}
+{{- $team := required "global.database.zalando.teamId is required" $z.teamId -}}
+{{- $dbs := $z.databases | default dict -}}
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: {{ $cluster }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "lan-software.labels" . | nindent 4 }}
+spec:
+  teamId: {{ $team | quote }}
+  postgresql:
+    version: {{ $z.version | default "16" | quote }}
+  numberOfInstances: {{ $z.instances | default 1 }}
+  volume:
+    size: {{ $z.storage.size | default "5Gi" | quote }}
+    {{- with $z.storage.storageClass }}
+    storageClass: {{ . | quote }}
+    {{- end }}
+  {{- with $z.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  users:
+    {{- range $db, $owner := $dbs }}
+    {{ $owner }}:
+      - superuser
+      - createdb
+    {{- end }}
+  databases:
+    {{- range $db, $owner := $dbs }}
+    {{ $db }}: {{ $owner }}
+    {{- end }}
+  {{- if and $z.backup $z.backup.enabled }}
+  enableLogicalBackup: true
+  {{- with $z.backup.s3 }}
+  logicalBackupS3Bucket: {{ .bucket | default "" | quote }}
+  logicalBackupS3Region: {{ .region | default "" | quote }}
+  logicalBackupS3Endpoint: {{ .endpoint | default "" | quote }}
+  {{- end }}
+  {{- end }}
+{{- end -}}

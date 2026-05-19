@@ -76,12 +76,12 @@ ingress:
   # Hosts default to global.lancoreHost (or "lancore.<global.domain>"); set
   # hosts[].host explicitly to override. See lan-common.lancoreHost helper.
   hosts: []
+  # TLS termination is selected globally via global.tls.mode
+  # (acme | preprovisioned | passthrough). Per-app overrides:
+  #   - tls.secretName: required in preprovisioned mode, optional in acme
+  #     (acme auto-generates a name from the fullname).
   tls:
-    enabled: true
     secretName: ""
-    issuerRef:
-      name: letsencrypt-prod
-      kind: ClusterIssuer
   # /horizon, /pulse — admin paths. A separate "-admin" Ingress is emitted
   # with auth annotations when adminAuth.mode != "none".
   adminPaths:
@@ -102,29 +102,20 @@ ingress:
     extraAnnotations: {}
   annotations: {}
 
-# Database — CloudNativePG. createCluster=true emits a Cluster CR; otherwise
-# the chart connects to an existing cluster whose Services it discovers via
-# .existing below.
+# Database — consumer-side connection config. The actual Postgres cluster is
+# owned by the umbrella (global.database in charts/lan-software/values.yaml):
+# either a shared Zalando postgresql CR or a pre-existing external instance.
+# When fields below are empty the lan-common.dbHost/dbPasswordSecretName
+# helpers resolve them from global.database.
 database:
   driver: pgsql
-  createCluster: false
-  cluster:
-    name: lancore-pg
-    instances: 3
-    storage:
-      size: 20Gi
-      storageClass: ""
-    backup:
-      enabled: true
-      retentionPolicy: 30d
-      barmanObjectStore: {}   # fill in for S3 barman backups
   existing:
-    host: ""                  # defaults to {{ .cluster.name }}-rw
+    host: ""                  # empty -> resolved via lan-common.dbHost helper
     port: 5432
     database: lancore
     username: lancore
     passwordSecret:
-      name: lancore-db
+      name: ""                # empty -> Zalando secret <user>.<cluster>.credentials.postgresql.acid.zalan.do
       key: password
 
 # Cache — Dragonfly Operator. createInstance=true emits a Dragonfly CR.

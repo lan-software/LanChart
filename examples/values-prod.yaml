@@ -3,8 +3,9 @@
 # Assumptions:
 #   - ghcr.io registry reachable
 #   - cert-manager + a "letsencrypt-prod" ClusterIssuer installed
-#   - CloudNativePG operator installed (the chart emits Cluster CRs)
-#   - Dragonfly Operator installed (the chart emits Dragonfly CRs)
+#   - Zalando postgres-operator installed (the chart emits a single
+#     `acid.zalan.do/v1 postgresql` CR)
+#   - Dragonfly Operator installed (each sub-chart emits a Dragonfly CR)
 #   - prometheus-operator + Grafana installed (monitoring.enabled)
 #   - OTel Collector reachable at http://otel-collector.observability.svc.cluster.local:4318
 #   - External S3 bucket + credentials Secrets created out of band
@@ -32,9 +33,11 @@ global:
   # Flip to "prefixed" (lanhelp.lancore.lanparty.de) if LanCore is at apex.
   satelliteHostStyle: flat
   tls:
-    issuer:
-      name: letsencrypt-prod
-      kind: ClusterIssuer
+    mode: acme
+    acme:
+      issuerRef:
+        name: letsencrypt-prod
+        kind: ClusterIssuer
   # Per-satellite integration overrides (optional).
   # When token/webhook secrets are empty, the umbrella auto-generates them
   # via Helm `lookup` (stable across upgrades). Fill these in if you want
@@ -44,8 +47,31 @@ global:
     lanentrance: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
     lanshout:    { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
     lanhelp:     { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
-  postgres:
-    operator: cnpg
+  database:
+    provider: zalando
+    zalando:
+      teamId: lan
+      clusterName: lan-postgres
+      version: "16"
+      instances: 3
+      storage:
+        size: 50Gi
+        storageClass: ""
+      resources:
+        requests: { cpu: 500m, memory: 1Gi }
+        limits:   { cpu: 2000m, memory: 4Gi }
+      backup:
+        enabled: true
+        s3:
+          bucket: lancore-pgbackups
+          region: eu-central-1
+          endpoint: https://s3.example.com
+      databases:
+        lancore:      lancore
+        lanbrackets:  lanbrackets
+        lanentrance:  lanentrance
+        lanshout:     lanshout
+        lanhelp:      lanhelp
   cache:
     operator: dragonfly
   s3:
@@ -88,9 +114,6 @@ lancore:
     enabled: true
     className: nginx
     hosts: []                    # auto-derived from global.lancoreHost
-    tls:
-      enabled: true
-      issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer }
     adminPaths: [/horizon, /pulse]
     adminAuth:
       mode: basic
@@ -99,21 +122,6 @@ lancore:
       # oauth2proxy:
       #   upstream: http://oauth2-proxy.auth.svc.cluster.local:4180
       #   signinBase: https://auth.example.com
-  database:
-    createCluster: true
-    cluster:
-      name: lancore-pg
-      instances: 3
-      storage: { size: 50Gi, storageClass: "" }
-      backup:
-        enabled: true
-        retentionPolicy: 30d
-        barmanObjectStore: {}
-    existing:
-      host: lancore-pg-rw.lan-software.svc.cluster.local
-      database: lancore
-      username: lancore
-      passwordSecret: { name: lancore-db, key: password }
   cache:
     createInstance: true
     instance:
@@ -184,8 +192,6 @@ lanbrackets:
     enabled: true
     className: nginx
     hosts: []                    # auto-derived: lanbrackets.lanparty.de
-    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
-  database: { createCluster: true }
   cache:    { createInstance: true, instance: { replicas: 1 } }
   networkPolicy:
     enabled: true
@@ -203,8 +209,6 @@ lanentrance:
     enabled: true
     className: nginx
     hosts: []                    # auto-derived: lanentrance.lanparty.de
-    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
-  database: { createCluster: true }
   cache:    { createInstance: true, instance: { replicas: 1 } }
   networkPolicy:
     enabled: true
@@ -222,8 +226,6 @@ lanshout:
     enabled: true
     className: nginx
     hosts: []                    # auto-derived: lanshout.lanparty.de
-    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
-  database: { createCluster: true }
   cache:    { createInstance: true, instance: { replicas: 1 } }
   networkPolicy:
     enabled: true
@@ -241,8 +243,6 @@ lanhelp:
     enabled: true
     className: nginx
     hosts: []                    # auto-derived: lanhelp.lanparty.de
-    tls: { enabled: true, issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer } }
-  database: { createCluster: true }
   cache:    { createInstance: true, instance: { replicas: 1 } }
   networkPolicy:
     enabled: true

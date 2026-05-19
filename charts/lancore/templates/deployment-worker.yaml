@@ -7,8 +7,8 @@
     "key"  .Values.ticketing.tokenPepperSecret.key
   )))
   (dict "name" "DB_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
-    "name" .Values.database.existing.passwordSecret.name
-    "key"  .Values.database.existing.passwordSecret.key
+    "name" (include "lan-common.dbPasswordSecretName" .)
+    "key"  (include "lan-common.dbPasswordSecretKey" .)
   )))
   (dict "name" "REDIS_PASSWORD" "valueFrom" (dict "secretKeyRef" (dict
     "name" .Values.cache.existing.passwordSecret.name

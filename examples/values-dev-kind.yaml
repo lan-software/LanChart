@@ -1,26 +1,47 @@
 # Dev values for a local `kind` cluster. See `make kind-up && make install-dev`.
 #
 # - Single-replica everything.
-# - TLS disabled (kind has no ACME reachability).
-# - Inline operator CRs: CNPG Cluster per sub-chart, Dragonfly CR per sub-chart.
+# - TLS passthrough — kind has no ACME / no upstream proxy, so the chart emits
+#   plain-HTTP Ingress objects (`global.tls.mode: passthrough`).
+# - Shared Zalando Postgres CR with 1 instance.
+# - Inline Dragonfly CR per sub-chart (cache.createInstance: true).
 # - Stripe/WebPush/TMT2 disabled.
 # - monitoring.enabled=false (kind clusters usually don't have prom-operator).
 # - Hostnames flat: lancore.lan-software.local, lanbrackets.lan-software.local, …
 
 global:
   domain: lan-software.local
-  scheme: http                   # kind has no ACME / TLS
+  scheme: http                   # kind has no TLS in front of it
   lancoreHost: ""                # -> lancore.lan-software.local
   satelliteHostStyle: flat       # -> <slug>.lan-software.local
   tls:
-    issuer:
-      name: selfsigned
-      kind: ClusterIssuer
+    mode: passthrough            # ingress speaks plain HTTP; no cert-manager
+    passthrough:
+      trustedProxies: ["*"]
+      forceSecureCookies: false  # dev only — public scheme is also http
   integrations:                  # auto-gen tokens via Helm lookup (stable across upgrades)
     lanbrackets: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
     lanentrance: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
     lanshout:    { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
     lanhelp:     { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+  database:
+    provider: zalando
+    zalando:
+      teamId: lan
+      clusterName: lan-postgres
+      version: "16"
+      instances: 1
+      storage:
+        size: 1Gi
+        storageClass: standard
+      backup:
+        enabled: false
+      databases:
+        lancore:      lancore
+        lanbrackets:  lanbrackets
+        lanentrance:  lanentrance
+        lanshout:     lanshout
+        lanhelp:      lanhelp
   s3:
     mode: external
   podSecurity:
@@ -48,13 +69,6 @@ lancore:
   ingress:
     enabled: true
     hosts: []                    # auto-derived (lancore.lan-software.local)
-    tls: { enabled: false }
-  database:
-    createCluster: true
-    cluster:
-      name: lancore-pg
-      instances: 1
-      storage: { size: 1Gi, storageClass: standard }
   cache:
     createInstance: true
     instance:
@@ -81,8 +95,6 @@ lanbrackets:
   ingress:
     enabled: true
     hosts: []
-    tls: { enabled: false }
-  database: { createCluster: true }
   cache:    { createInstance: true }
   networkPolicy: { enabled: false }
 
@@ -94,8 +106,6 @@ lanentrance:
   ingress:
     enabled: true
     hosts: []
-    tls: { enabled: false }
-  database: { createCluster: true }
   cache:    { createInstance: true }
   networkPolicy: { enabled: false }
 
@@ -107,8 +117,6 @@ lanshout:
   ingress:
     enabled: true
     hosts: []
-    tls: { enabled: false }
-  database: { createCluster: true }
   cache:    { createInstance: true }
   networkPolicy: { enabled: false }
 
@@ -120,7 +128,5 @@ lanhelp:
   ingress:
     enabled: true
     hosts: []
-    tls: { enabled: false }
-  database: { createCluster: true }
   cache:    { createInstance: true }
   networkPolicy: { enabled: false }

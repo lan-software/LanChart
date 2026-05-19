@@ -48,6 +48,9 @@ jobs:
       - name: helm template (prod values)
         run: helm template lan-software charts/lan-software -f examples/values-prod.yaml --namespace lan-software > /tmp/rendered-prod.yaml
 
+      - name: helm template (k3s values)
+        run: helm template lan-software charts/lan-software -f examples/values-k3s.yaml --namespace lan-software > /tmp/rendered-k3s.yaml
+
       - name: verify-hostnames (no example.com leaks)
         run: make verify-hostnames
 
@@ -73,6 +76,14 @@ jobs:
             -schema-location default \
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
             /tmp/rendered-prod.yaml
+
+      - name: kubeconform (k3s)
+        run: |
+          kubeconform -strict -summary -ignore-missing-schemas \
+            -kubernetes-version ${{ env.K8S_VERSION }} \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/rendered-k3s.yaml
 
       - name: helm-unittest
         run: |

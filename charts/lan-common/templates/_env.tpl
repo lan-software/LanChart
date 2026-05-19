@@ -1,9 +1,21 @@
 {{/*
 lan-common.commonEnv — env shared by every Laravel application container.
+
+Includes TLS-mode-aware envs:
+  - TRUSTED_PROXIES / SESSION_SECURE_COOKIE are emitted when
+    global.tls.mode == "passthrough" so Laravel's TrustProxies middleware
+    honours X-Forwarded-Proto from the upstream reverse proxy and the
+    framework still issues `Secure` session cookies despite the pod
+    seeing plain HTTP. See ADR-0010.
+  - SESSION_SECURE_COOKIE is also set under "acme" and "preprovisioned"
+    since the public scheme is https in those modes too.
+
 Usage: include "lan-common.commonEnv" (dict "context" .)
 */}}
 {{- define "lan-common.commonEnv" -}}
 {{- $global := .context.Values.global | default dict -}}
+{{- $tls := $global.tls | default dict -}}
+{{- $tlsMode := $tls.mode | default "acme" -}}
 - name: APP_ENV
   value: {{ .context.Values.appEnv | default "production" | quote }}
 - name: APP_DEBUG
@@ -14,6 +26,16 @@ Usage: include "lan-common.commonEnv" (dict "context" .)
   value: {{ .context.Values.appUrl | default (printf "%s://%s" (include "lan-common.scheme" .context) (include "lan-common.computedChartHost" .context)) | quote }}
 - name: TZ
   value: {{ .context.Values.timezone | default "UTC" | quote }}
+{{- if eq $tlsMode "passthrough" }}
+{{- $pt := $tls.passthrough | default dict }}
+- name: TRUSTED_PROXIES
+  value: {{ join "," ($pt.trustedProxies | default (list "*")) | quote }}
+- name: SESSION_SECURE_COOKIE
+  value: {{ $pt.forceSecureCookies | default true | quote }}
+{{- else }}
+- name: SESSION_SECURE_COOKIE
+  value: "true"
+{{- end }}
 {{- end -}}
 
 {{/*

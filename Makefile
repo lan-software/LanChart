@@ -58,8 +58,9 @@ prereqs: ## Install cluster-scoped prerequisite operators (destructive — targe
 	helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx
 	kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cert-manager jetstack/cert-manager -n cert-manager --set crds.enabled=true
-	kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
-	helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system
+	helm repo add postgres-operator-charts https://opensource.zalando.com/postgres-operator/charts/postgres-operator/ 2>/dev/null || true
+	kubectl create namespace postgres-operator --dry-run=client -o yaml | kubectl apply -f -
+	helm upgrade --install postgres-operator postgres-operator-charts/postgres-operator -n postgres-operator
 	kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
 
 .PHONY: install-dev

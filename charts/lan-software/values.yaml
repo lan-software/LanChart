@@ -4,10 +4,10 @@
 # `lancore:`, `lanbrackets:`, etc. flow straight into the corresponding
 # sub-chart's Values (Helm standard umbrella-value scoping).
 #
-# Phase-3 canonical install: override `global.domain` (and optionally the
-# TLS issuer + host style) — everything else defaults. Integration-app
-# tokens are auto-generated and reconciled into LanCore by a pre-install
-# hook Job; operators can override per-slug tokens via
+# Canonical install: override `global.domain`, pick `global.database.provider`
+# and `global.tls.mode` — everything else defaults. Integration-app tokens are
+# auto-generated and reconciled into LanCore by a pre-install hook Job;
+# operators can override per-slug tokens via
 # `global.integrations.<slug>.token` / `.webhookSecret`.
 
 global:
@@ -33,11 +33,35 @@ global:
   #   custom   -> per-satellite host under global.integrations.<slug>.host
   satelliteHostStyle: flat
 
-  # TLS issuer reference. Chart does NOT create the issuer.
+  # ----------------------------------------------------------------------
+  # TLS termination strategy. See docs/adr/0010-tls-modes.md.
+  #
+  #   acme           Chart-emitted Ingress objects request cert-manager
+  #                  Certificates from `acme.issuerRef` (a ClusterIssuer
+  #                  the operator installed out of band — ADR-0002).
+  #   preprovisioned Operator drops in a TLS Secret per host; chart wires
+  #                  spec.tls.secretName from ingress.tls.secretName.
+  #                  No cert-manager involvement.
+  #   passthrough    Ingress objects emit plain HTTP. An upstream reverse
+  #                  proxy terminates TLS and forwards X-Forwarded-Proto.
+  # ----------------------------------------------------------------------
   tls:
-    issuer:
-      name: letsencrypt-prod
-      kind: ClusterIssuer
+    mode: acme
+    acme:
+      issuerRef:
+        name: letsencrypt-prod
+        kind: ClusterIssuer
+    preprovisioned:
+      # per-host TLS Secret name supplied via subchart ingress.tls.secretName
+      {}
+    passthrough:
+      # CIDRs Laravel's TrustProxies middleware should trust. Tighten in prod
+      # (e.g. ["10.0.0.0/8"]) — "*" lets X-Forwarded-* through unconditionally.
+      trustedProxies:
+        - "*"
+      # Force secure cookies even though the pod sees plain HTTP; the
+      # public-facing scheme is still https.
+      forceSecureCookies: true
 
   # Per-slug integration config / overrides. Used by:
   #   - the umbrella's integrations-seed Secret (token + webhook secret),
@@ -67,9 +91,49 @@ global:
       announcementWebhookSecret: ""
       rolesWebhookSecret: ""
 
-  # Stateful-infra operator picks (cluster prereqs).
-  postgres:
-    operator: cnpg
+  # ----------------------------------------------------------------------
+  # Database provider. See docs/adr/0009-zalando-postgres-operator.md.
+  #
+  #   zalando   One shared `acid.zalan.do/v1 postgresql` CR managed by the
+  #             Zalando postgres-operator. The CR declares one role + one
+  #             database per Lan-Software app; the operator generates a
+  #             credentials Secret per role following the pattern
+  #             `<role>.<clusterName>.credentials.postgresql.acid.zalan.do`.
+  #   external  Connect to a pre-existing Postgres. Per-app credentials are
+  #             supplied via `database.existing.passwordSecret.name` on each
+  #             sub-chart.
+  # ----------------------------------------------------------------------
+  database:
+    provider: zalando
+    zalando:
+      teamId: lan
+      clusterName: lan-postgres        # must start with "{teamId}-" — see Zalando docs
+      version: "16"
+      instances: 3
+      storage:
+        size: 20Gi
+        storageClass: ""
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 1000m, memory: 1Gi }
+      # Optional WAL-G S3 backup; leave disabled until an S3 bucket is provisioned.
+      backup:
+        enabled: false
+        s3: {}
+      # The Zalando operator provisions one DB + one owner role per entry.
+      # Key = database name; value = owner role name. Role names must be
+      # lowercase with no underscores (Zalando secret-name normalisation).
+      databases:
+        lancore:      lancore
+        lanbrackets:  lanbrackets
+        lanentrance:  lanentrance
+        lanshout:     lanshout
+        lanhelp:      lanhelp
+    external:
+      host: ""
+      port: 5432
+      sslmode: prefer
+
   cache:
     operator: dragonfly
   s3:

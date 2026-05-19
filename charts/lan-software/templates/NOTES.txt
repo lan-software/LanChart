@@ -21,8 +21,19 @@ Installed apps:
 
 Cluster-scoped prerequisites (not installed by this chart):
   - ingress-nginx (or another Ingress controller)
-  - cert-manager + a {{ .Values.global.tls.issuer.kind }} named "{{ .Values.global.tls.issuer.name }}"
-  - CloudNativePG operator (if any sub-chart has database.createCluster=true)
+{{- $tlsMode := (.Values.global.tls.mode | default "acme") }}
+{{- if eq $tlsMode "acme" }}
+  - cert-manager + a {{ .Values.global.tls.acme.issuerRef.kind | default "ClusterIssuer" }} named "{{ .Values.global.tls.acme.issuerRef.name }}"
+{{- else if eq $tlsMode "preprovisioned" }}
+  - Pre-provisioned TLS Secrets per Ingress (set ingress.tls.secretName on each sub-chart)
+{{- else if eq $tlsMode "passthrough" }}
+  - Upstream reverse proxy terminating TLS (chart-emitted Ingress speaks plain HTTP)
+{{- end }}
+{{- if eq (.Values.global.database.provider | default "zalando") "zalando" }}
+  - Zalando postgres-operator (chart emits acid.zalan.do/v1 postgresql)
+{{- else }}
+  - Pre-existing Postgres reachable at "{{ .Values.global.database.external.host }}"
+{{- end }}
   - Dragonfly Operator       (if any sub-chart has cache.createInstance=true)
   - MinIO Operator           (if global.s3.mode == minio-tenant)
   - prometheus-operator CRDs (if global.monitoring.enabled)

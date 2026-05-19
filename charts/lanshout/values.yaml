@@ -33,10 +33,10 @@ ingress:
   className: nginx
   # Hosts computed via lan-common.satelliteHost from global.domain + style.
   hosts: []
+  # TLS termination is selected globally via global.tls.mode
+  # (acme | preprovisioned | passthrough).
   tls:
-    enabled: true
     secretName: ""
-    issuerRef: { name: letsencrypt-prod, kind: ClusterIssuer }
   annotations: {}
 
 lancore:
@@ -54,17 +54,14 @@ defaultLocale: de
 
 database:
   driver: pgsql
-  createCluster: false
-  cluster:
-    name: lanshout-pg
-    instances: 1
-    storage: { size: 5Gi, storageClass: "" }
+  # Consumer-side connection config only; the Postgres cluster is owned
+  # by the umbrella (global.database).
   existing:
     host: ""
     port: 5432
     database: lanshout
     username: lanshout
-    passwordSecret: { name: lanshout-db, key: password }
+    passwordSecret: { name: "", key: password }
 
 cache:
   driver: dragonfly

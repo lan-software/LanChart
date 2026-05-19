@@ -51,12 +51,11 @@ ingress:
   # hosts[].host explicitly (with paths[]) to override. See the
   # lan-common.satelliteHost helper.
   hosts: []
+  # TLS termination is selected globally via global.tls.mode
+  # (acme | preprovisioned | passthrough). secretName is required when
+  # mode=preprovisioned and optional under mode=acme.
   tls:
-    enabled: true
     secretName: ""
-    issuerRef:
-      name: letsencrypt-prod
-      kind: ClusterIssuer
   annotations: {}
 
 lancore:
@@ -71,17 +70,15 @@ lancore:
 
 database:
   driver: pgsql
-  createCluster: false
-  cluster:
-    name: lanbrackets-pg
-    instances: 1
-    storage: { size: 10Gi, storageClass: "" }
+  # Consumer-side connection config only; the Postgres cluster is owned
+  # by the umbrella (global.database). Empty fields are resolved via the
+  # lan-common.dbHost / lan-common.dbPasswordSecretName helpers.
   existing:
-    host: ""                  # defaults to {{ .cluster.name }}-rw
+    host: ""
     port: 5432
     database: lanbrackets
     username: lanbrackets
-    passwordSecret: { name: lanbrackets-db, key: password }
+    passwordSecret: { name: "", key: password }
 
 cache:
   driver: dragonfly

@@ -12,12 +12,44 @@ versions):
 |--------------|---------|
 | Kubernetes 1.29+ with RBAC | Target cluster |
 | Helm 3.14+ (or Helm 4.x) | Chart tool |
-| ingress-nginx | External Ingress + TLS termination |
-| cert-manager | ACME / TLS cert lifecycle |
-| CloudNativePG operator | Postgres CR controller |
+| ingress-nginx | External Ingress controller |
+| cert-manager *(optional)* | Required only when `global.tls.mode: acme` |
+| Zalando postgres-operator *(optional)* | Required only when `global.database.provider: zalando` |
 | Dragonfly Operator | Redis-compatible cache CR controller |
-| MinIO Operator *(optional)* | Required only if `storage.mode: minio-tenant` |
+| MinIO Operator *(optional)* | Required only if any sub-chart sets `storage.mode: minio-tenant` |
 | prometheus-operator *(optional)* | Required only if `global.monitoring.enabled: true` |
+
+## Choosing a database provider
+
+`global.database.provider` (umbrella values) picks how Postgres is sourced:
+
+| Mode | What the chart does | When to use |
+|------|---------------------|-------------|
+| `zalando` *(default)* | Emits one shared `acid.zalan.do/v1 postgresql` CR with a database + login role per app. The operator generates a credentials Secret per role. | New clusters where you want the chart to manage Postgres. |
+| `external` | Emits no CR; each app connects to `global.database.external.host` (or `database.existing.host` per app) using a password Secret you create out of band. | RDS, Cloud SQL, an existing self-managed Postgres, or a database that lives outside this chart's lifecycle. |
+
+For `external` mode, set per app:
+```yaml
+lancore:
+  database:
+    existing:
+      host: pg.example.internal
+      username: lancore
+      database: lancore
+      passwordSecret: { name: lancore-db, key: password }
+```
+
+## Choosing a TLS mode
+
+`global.tls.mode` picks how TLS reaches the apps:
+
+| Mode | Chart-emitted Ingress | Use when |
+|------|----------------------|----------|
+| `acme` *(default)* | `cert-manager.io/cluster-issuer` annotation + `spec.tls` so cert-manager issues a Certificate from `global.tls.acme.issuerRef`. | Public clusters with cert-manager and a ClusterIssuer (e.g. Let's Encrypt). |
+| `preprovisioned` | `spec.tls.secretName` from each sub-chart's `ingress.tls.secretName`; no cert-manager involvement. | You manage TLS Secrets out of band (corporate PKI, externalsecrets pulling from Vault, etc.). |
+| `passthrough` | No `spec.tls`; ingress speaks plain HTTP. `force-ssl-redirect`/`ssl-redirect` disabled. Laravel's TrustProxies middleware is wired via `TRUSTED_PROXIES` and `SESSION_SECURE_COOKIE=true`. | An upstream reverse proxy (LAN gateway, HAProxy, cloud LB) terminates TLS and forwards `X-Forwarded-Proto`. |
+
+See [`docs/adr/0010-tls-modes.md`](adr/0010-tls-modes.md) for the full rationale.
 
 ## Install
 
@@ -28,9 +60,11 @@ kubectl label namespace lan-software \
     pod-security.kubernetes.io/enforce=baseline --overwrite
 
 # 2. Create a values file. For local kind clusters, copy examples/values-dev-kind.yaml.
+#    For a k3s test rollout, copy examples/values-k3s.yaml.
 #    For production, override at minimum:
 #      global.domain
-#      global.tls.issuer.name
+#      global.database.provider (and global.database.zalando.* or .external.*)
+#      global.tls.mode          (and the matching sub-block)
 #      credential Secrets (mail, Stripe, WebPush, S3) — created out of band
 
 # 3. Install.

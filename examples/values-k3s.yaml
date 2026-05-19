@@ -1,0 +1,151 @@
+# Single-node k3s test rollout for the lan-software umbrella.
+#
+# Topology:
+#   - k3s ships with `local-path` StorageClass + Traefik (disable Traefik if
+#     you use the bundled ingress-nginx instead — see docs/operators.md).
+#   - One shared Zalando Postgres CR with 1 instance / 5Gi local-path storage.
+#   - One Dragonfly CR per app (single replica, no persistence).
+#   - TLS terminates **upstream** of the cluster (LAN reverse proxy / homelab
+#     gateway). The chart-emitted Ingress objects therefore speak plain HTTP
+#     (`global.tls.mode: passthrough`).
+#   - Stripe / WebPush / TMT2 / monitoring disabled.
+#
+# Prereqs on the k3s node:
+#   helm repo add postgres-operator-charts https://opensource.zalando.com/postgres-operator/charts/postgres-operator/
+#   helm install postgres-operator postgres-operator-charts/postgres-operator -n postgres-operator --create-namespace
+#   kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
+#   # ingress-nginx (only if you replaced Traefik):
+#   helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
+
+global:
+  domain: lan.local              # adjust to your LAN domain
+  scheme: https                   # public scheme — TLS terminates upstream
+  lancoreHost: ""                 # -> lancore.lan.local
+  satelliteHostStyle: flat
+  tls:
+    mode: passthrough
+    passthrough:
+      trustedProxies:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+      forceSecureCookies: true    # public scheme is https
+  integrations:
+    lanbrackets: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanentrance: { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanshout:    { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+    lanhelp:     { host: "", token: "", announcementWebhookSecret: "", rolesWebhookSecret: "" }
+  database:
+    provider: zalando
+    zalando:
+      teamId: lan
+      clusterName: lan-postgres
+      version: "16"
+      instances: 1
+      storage:
+        size: 5Gi
+        storageClass: local-path  # k3s default
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits:   { cpu: 1000m, memory: 1Gi }
+      backup:
+        enabled: false
+      databases:
+        lancore:      lancore
+        lanbrackets:  lanbrackets
+        lanentrance:  lanentrance
+        lanshout:     lanshout
+        lanhelp:      lanhelp
+  s3:
+    mode: external
+  podSecurity:
+    profile: baseline
+  monitoring:
+    enabled: false
+  otel:
+    enabled: false
+
+lancore:
+  enabled: true
+  web:
+    replicaCount: 1
+    hpa: { enabled: false }
+    pdb: { enabled: false }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { memory: 768Mi }
+  worker:
+    replicaCount: 1
+    pdb: { enabled: false }
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { memory: 512Mi }
+  ingress:
+    enabled: true
+    className: nginx              # change to "traefik" if you keep k3s defaults
+    hosts: []
+  cache:
+    createInstance: true
+    instance:
+      name: lancore-dragonfly
+      replicas: 1
+      persistence: { enabled: false }
+  storage:
+    mode: external
+  stripe:  { enabled: false }
+  webpush: { enabled: false }
+  tmt2:    { enabled: false }
+  demo:    { enabled: false }
+  pulse:   { enabled: true,  authorize: admin-only }
+  horizon: { enabled: true,  authorize: admin-only }
+  networkPolicy:
+    enabled: false                # k3s default Flannel does not enforce NP
+
+lanbrackets:
+  enabled: true
+  web:
+    replicaCount: 1
+    hpa: { enabled: false }
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []
+  cache: { createInstance: true, instance: { replicas: 1, persistence: { enabled: false } } }
+  networkPolicy: { enabled: false }
+
+lanentrance:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []
+  cache: { createInstance: true, instance: { replicas: 1, persistence: { enabled: false } } }
+  networkPolicy: { enabled: false }
+
+lanshout:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []
+  cache: { createInstance: true, instance: { replicas: 1, persistence: { enabled: false } } }
+  networkPolicy: { enabled: false }
+
+lanhelp:
+  enabled: true
+  web:
+    replicaCount: 1
+    pdb: { enabled: false }
+  ingress:
+    enabled: true
+    className: nginx
+    hosts: []
+  cache: { createInstance: true, instance: { replicas: 1, persistence: { enabled: false } } }
+  networkPolicy: { enabled: false }

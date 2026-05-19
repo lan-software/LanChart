@@ -93,8 +93,8 @@ spec:
                 - name: DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: {{ .Values.database.existing.passwordSecret.name }}
-                      key: {{ .Values.database.existing.passwordSecret.key }}
+                      name: {{ include "lan-common.dbPasswordSecretName" . }}
+                      key: {{ include "lan-common.dbPasswordSecretKey" . }}
               envFrom:
                 {{- if .Values.configMap.enabled }}
                 - configMapRef:
