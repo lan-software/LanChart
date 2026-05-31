@@ -53,10 +53,14 @@ spec:
     {{- end }}
   {{- if and $z.backup $z.backup.enabled }}
   enableLogicalBackup: true
-  {{- with $z.backup.s3 }}
-  logicalBackupS3Bucket: {{ .bucket | default "" | quote }}
-  logicalBackupS3Region: {{ .region | default "" | quote }}
-  logicalBackupS3Endpoint: {{ .endpoint | default "" | quote }}
-  {{- end }}
+  {{- /*
+       The S3 backup target (bucket / region / endpoint) is NOT a per-cluster
+       field on the acid.zalan.do/v1 postgresql spec — it is global operator
+       configuration (logical_backup_s3_* in the postgres-operator ConfigMap /
+       OperatorConfiguration). Emitting it here is rejected by the CRD schema
+       (kubeconform -strict), so global.database.zalando.backup.s3.* is
+       consumed when configuring the operator out-of-band (see docs/operators.md),
+       not on the cluster CR.
+  */}}
   {{- end }}
 {{- end -}}
