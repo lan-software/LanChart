@@ -2,8 +2,8 @@ apiVersion: v2
 name: lanbrackets
 description: LanBrackets — tournament bracket management. Octane flavor, LanCore SSO satellite.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.1
+appVersion: "0.2.1"
 kubeVersion: ">=1.29.0-0"
 sources:
   - https://github.com/lan-software/lanbrackets
@@ -18,5 +18,5 @@ keywords:
   - octane
 dependencies:
   - name: lan-common
-    version: 0.1.0
+    version: 0.2.1
     repository: "file://../lan-common"

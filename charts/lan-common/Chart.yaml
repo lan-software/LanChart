@@ -2,8 +2,8 @@ apiVersion: v2
 name: lan-common
 description: Shared library chart for the lan-software umbrella — labels, deployment, probes, NetworkPolicy, migration Job, and other reusable templates for LanCore and its satellite apps.
 type: library
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.1
+appVersion: "0.2.1"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/lan-software/LanChart
 sources:

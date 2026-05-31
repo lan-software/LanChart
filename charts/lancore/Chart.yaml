@@ -2,8 +2,8 @@ apiVersion: v2
 name: lancore
 description: LanCore — LAN Party & BYOD Event Management Platform. SSO issuer, ticketing, Stripe, Horizon, Pulse. Octane flavor.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.1
+appVersion: "0.2.1"
 kubeVersion: ">=1.29.0-0"
 home: https://lan-software.de
 icon: https://lan-software.de/logo.png
@@ -21,5 +21,5 @@ keywords:
   - horizon
 dependencies:
   - name: lan-common
-    version: 0.1.0
+    version: 0.2.1
     repository: "file://../lan-common"

@@ -2,8 +2,8 @@ apiVersion: v2
 name: lanshout
 description: LanShout — announcements and chat. Server flavor, LanCore SSO satellite.
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.1
+appVersion: "0.2.1"
 kubeVersion: ">=1.29.0-0"
 sources:
   - https://github.com/lan-software/lanshout
@@ -14,5 +14,5 @@ maintainers:
 keywords: [lanshout, lan-software, laravel]
 dependencies:
   - name: lan-common
-    version: 0.1.0
+    version: 0.2.1
     repository: "file://../lan-common"
